@@ -1,0 +1,36 @@
+[package]
+name = "sodium-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.dev]
+panic = "abort"
+debug = true
+
+[profile.release]
+panic = "abort"
+lto = "fat"
+
+[profile.asm]
+inherits = "release"
+debug = false
+lto = "off"
+
+[profile.production]
+inherits = "release"
+lto = "fat"
+
+[profile.profiling]
+inherits = "release"
+lto = "fat"
+debug = true
+
+[dependencies]
+# Using these dependencies directly gives us access to setting features.
+core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features = [
+    "all_lane_counts",
+] }
+std_float = { git = "https://github.com/rust-lang/portable-simd.git" }

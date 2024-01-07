@@ -12,16 +12,17 @@ struct CFrustum {
 
 #[allow(non_snake_case)]
 mod java {
-    use std::boxed::Box;
+    use alloc::boxed::Box;
 
     use crate::ffi::*;
+    use crate::graph::flags::SectionFlagSet;
     use crate::graph::local::LocalCoordContext;
     use crate::graph::visibility::VisibilityData;
     use crate::mem::LibcAllocVtable;
     use crate::panic::PanicHandlerFn;
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_setAllocator(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_setAllocator(
         _: *mut JEnv,
         _: *mut JClass,
         vtable: JPtr<LibcAllocVtable>,
@@ -32,7 +33,7 @@ mod java {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_setPanicHandler(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_setPanicHandler(
         _: *mut JEnv,
         _: *mut JClass,
         pfn: JPtr<PanicHandlerFn>,
@@ -43,7 +44,7 @@ mod java {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_graphCreate(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_graphCreate(
         _: *mut JEnv,
         _: *mut JClass,
     ) -> Jlong {
@@ -53,26 +54,26 @@ mod java {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_graphSetSection(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_graphSetSection(
         _: *mut JEnv,
         _: *mut JClass,
         graph: JPtrMut<Graph>,
         x: Jint,
         y: Jint,
         z: Jint,
-        has_geometry: Jboolean,
         visibility_data: Jlong,
+        flags: Jbyte,
     ) {
         let graph = graph.into_mut_ref();
         graph.set_section(
             i32x3::from_xyz(x, y, z),
-            has_geometry,
             VisibilityData::pack(visibility_data as u64),
+            SectionFlagSet::from(flags as u8),
         );
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_graphRemoveSection(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_graphRemoveSection(
         _: *mut JEnv,
         _: *mut JClass,
         graph: JPtrMut<Graph>,
@@ -85,7 +86,7 @@ mod java {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_graphSearch(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_graphSearch(
         _: *mut JEnv,
         _: *mut JClass,
         graph: JPtrMut<Graph>,
@@ -116,11 +117,11 @@ mod java {
             world_top_section_y,
         );
 
-        graph.cull(&coord_context, disable_occlusion_culling) as *const _ as usize as Jlong
+        graph.cull_and_sort(&coord_context, disable_occlusion_culling) as *const _ as usize as Jlong
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_core_CoreLibFFI_graphDelete(
+    pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_graphDelete(
         _: *mut JEnv,
         _: *mut JClass,
         graph: JPtrMut<Graph>,

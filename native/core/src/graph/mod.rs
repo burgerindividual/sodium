@@ -1,10 +1,11 @@
-use std::mem::swap;
+use core::mem::swap;
 
 use core_simd::simd::Which::*;
 use core_simd::simd::*;
 use local::LocalCoordContext;
 
-use crate::collections::ArrayDeque;
+use self::flags::SectionFlagSet;
+use crate::collections::{ArrayDeque, CInlineVec};
 use crate::graph::local::index::LocalNodeIndex;
 use crate::graph::local::*;
 use crate::graph::octree::LinearBitOctree;
@@ -12,6 +13,7 @@ use crate::graph::visibility::*;
 use crate::math::*;
 use crate::region::*;
 
+pub mod flags;
 pub mod local;
 mod octree;
 pub mod visibility;
@@ -22,7 +24,8 @@ pub const MAX_VIEW_DISTANCE: u8 = 127;
 pub const MAX_WORLD_HEIGHT: u8 = 254;
 pub const BFS_QUEUE_SIZE: usize =
     get_bfs_queue_max_size(MAX_VIEW_DISTANCE, MAX_WORLD_HEIGHT) as usize;
-pub type BfsQueue = ArrayDeque<LocalNodeIndex<1>, BFS_QUEUE_SIZE>;
+pub type BfsQueue = ArrayDeque<LocalNodeIndex<0>, BFS_QUEUE_SIZE>;
+pub type SortedRegionRenderLists = CInlineVec<RegionRenderList, REGIONS_IN_GRAPH>;
 
 pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u8) -> u32 {
     // for the worst case, we will assume the player is in the center of the render
@@ -54,26 +57,24 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     // add final, outer-most ring.
     count += max_width_traversal * 4;
 
-    // TODO: i'm pretty sure this only holds true when we do checks on the nodes
-    // before enqueueing  them. however, this would result in a lot of excess
-    // checks when multiple nodes try to queue  the same section.
-    // if frustum {
-    //     // divide by 2 because the player should never be able to see more than
-    // half of the world     // at once with frustum culling. This assumes an
-    // FOV maximum of 180 degrees.     count = count.div_ceil(2);
-    // }
-
+    // To future people:
+    // Initially, this number would be divided by two, assuming that the frustum
+    // would remove atleast half of the entries at a given time. However, I'm pretty
+    // sure the assumption doesn't quite hold. This is because we add sections to
+    // the queue before we actually check them, so if multiple sections attempt to
+    // add the same node, we only do one check on the node.
     count
 }
 
 pub struct BfsCachedState {
     incoming_directions: [GraphDirectionSet; SECTIONS_IN_GRAPH],
-    staging_draw_batches: StagingRegionDrawBatches,
+    staging_render_lists: StagingRegionRenderLists,
 }
 
 impl BfsCachedState {
     pub fn reset(&mut self) {
         self.incoming_directions.fill(GraphDirectionSet::NONE);
+        self.staging_render_lists.clear();
     }
 }
 
@@ -81,7 +82,7 @@ impl Default for BfsCachedState {
     fn default() -> Self {
         BfsCachedState {
             incoming_directions: [GraphDirectionSet::default(); SECTIONS_IN_GRAPH],
-            staging_draw_batches: Default::default(),
+            staging_render_lists: Default::default(),
         }
     }
 }
@@ -98,38 +99,46 @@ impl FrustumFogCachedState {
 }
 
 pub struct Graph {
-    section_has_geometry_bits: LinearBitOctree,
     section_visibility_direction_sets: [VisibilityData; SECTIONS_IN_GRAPH],
+    section_flag_sets: [SectionFlagSet; SECTIONS_IN_GRAPH],
 
     frustum_fog_cached_state: FrustumFogCachedState,
     bfs_cached_state: BfsCachedState,
+
+    results: SortedRegionRenderLists,
 }
 
 impl Graph {
     pub fn new() -> Self {
-        Graph {
-            section_has_geometry_bits: Default::default(),
+        Self {
             section_visibility_direction_sets: [Default::default(); SECTIONS_IN_GRAPH],
+            section_flag_sets: [Default::default(); SECTIONS_IN_GRAPH],
             frustum_fog_cached_state: Default::default(),
             bfs_cached_state: Default::default(),
+            results: Default::default(),
         }
     }
 
-    pub fn cull(
+    pub fn cull_and_sort(
         &mut self,
         coord_context: &LocalCoordContext,
         disable_occlusion_culling: bool,
-    ) -> &StagingRegionDrawBatches {
-        self.bfs_cached_state.staging_draw_batches.reset();
+    ) -> &SortedRegionRenderLists {
+        self.results.clear();
 
         self.frustum_and_fog_cull(coord_context);
         self.bfs_and_occlusion_cull(coord_context, disable_occlusion_culling);
 
+        self.bfs_cached_state
+            .staging_render_lists
+            .compile_render_lists(&mut self.results);
+
         // this will make sure nothing tries to use it after culling, and it should be
         // clean for the next invocation of this method
+        self.bfs_cached_state.reset();
         self.frustum_fog_cached_state.reset();
 
-        &self.bfs_cached_state.staging_draw_batches
+        &self.results
     }
 
     fn frustum_and_fog_cull(&mut self, coord_context: &LocalCoordContext) {
@@ -179,9 +188,6 @@ impl Graph {
                     }
                 }
                 0 => {
-                    // TODO: perhaps this should just be set to true always? i think the
-                    // geometry status should only be applied to the final bitmask and returned
-                    // sections, without impeding the bfs flow.
                     self.frustum_fog_cached_state
                         .section_is_visible_bits
                         .set(index, true);
@@ -204,18 +210,21 @@ impl Graph {
 
         // Initially the read queue
         let mut queue_1 = BfsQueue::default();
+        let mut read_queue_ref = &mut queue_1;
+
         // Initially the write queue
         let mut queue_2 = BfsQueue::default();
+        let mut write_queue_ref = &mut queue_2;
 
-        // Manually add the first section to search from
+        // Manually add the secton the camera is in as the section to search from
         let initial_node_index = coord_context.camera_section_index;
-        queue_1.push(initial_node_index);
+        read_queue_ref.push(initial_node_index);
+
+        // All incoming directions are set for the first section to make sure we try all
+        // of its outgoing directions.
         initial_node_index
             .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions)
             .add_all(GraphDirectionSet::ALL);
-
-        let mut read_queue_ref = &mut queue_1;
-        let mut write_queue_ref = &mut queue_2;
 
         let mut finished = false;
         // this finishes when the read queue is completely empty.
@@ -224,6 +233,15 @@ impl Graph {
 
             while let Some(&node_index) = read_queue_ref.pop() {
                 finished = false;
+
+                let node_pos = node_index.unpack();
+
+                // we need to touch the region before checking if the node is visible, because
+                // skipping sections can cause the region order to become incorrect
+                let region_render_list = self
+                    .bfs_cached_state
+                    .staging_render_lists
+                    .touch_region(coord_context, node_pos);
 
                 if !self
                     .frustum_fog_cached_state
@@ -234,28 +252,19 @@ impl Graph {
                     continue;
                 }
 
-                let node_pos = node_index.unpack();
-                let valid_directions = coord_context.get_valid_directions(node_pos);
+                let section_flags = *node_index.index_array_unchecked(&self.section_flag_sets);
+                region_render_list.add_section(section_flags, node_pos);
 
-                let mut node_outgoing_directions;
-                if self.section_has_geometry_bits.get(node_index) {
-                    self.bfs_cached_state
-                        .staging_draw_batches
-                        .add_section(coord_context, node_pos);
+                // use incoming directions to determine outgoing directions, given the
+                // visibility bits set
+                let node_incoming_directions =
+                    *node_index.index_array_unchecked(&self.bfs_cached_state.incoming_directions);
 
-                    // use incoming directions to determine outgoing directions, given the
-                    // visibility bits set
-                    let node_incoming_directions = *node_index
-                        .index_array_unchecked(&self.bfs_cached_state.incoming_directions);
-
-                    node_outgoing_directions = node_index
-                        .index_array_unchecked(&self.section_visibility_direction_sets)
-                        .get_outgoing_directions(node_incoming_directions);
-                    node_outgoing_directions.add_all(directions_modifier);
-                    node_outgoing_directions &= valid_directions;
-                } else {
-                    node_outgoing_directions = valid_directions;
-                }
+                let mut node_outgoing_directions = node_index
+                    .index_array_unchecked(&self.section_visibility_direction_sets)
+                    .get_outgoing_directions(node_incoming_directions);
+                node_outgoing_directions.add_all(directions_modifier);
+                node_outgoing_directions &= coord_context.get_valid_directions(node_pos);
 
                 // use the outgoing directions to get the neighbors that could possibly be
                 // enqueued
@@ -276,35 +285,31 @@ impl Graph {
 
                     neighbor_incoming_directions.add(current_incoming_direction);
 
-                    unsafe {
-                        write_queue_ref
-                            .push_conditionally_unchecked(neighbor_index, should_enqueue);
-                    }
+                    write_queue_ref.push_conditionally(neighbor_index, should_enqueue);
                 }
             }
 
-            read_queue_ref.reset();
+            // no need to reset the read queue as we've already popped all the elements from
+            // it.
             swap(&mut read_queue_ref, &mut write_queue_ref);
-
-            self.bfs_cached_state.reset();
         }
     }
 
     pub fn set_section(
         &mut self,
         section_coord: i32x3,
-        has_geometry: bool,
         visibility_data: VisibilityData,
+        flags: SectionFlagSet,
     ) {
         let local_coord = section_coord.cast::<u8>();
         let index = LocalNodeIndex::<0>::pack(local_coord);
 
-        self.section_has_geometry_bits.set(index, has_geometry);
+        *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;
         *index.index_array_unchecked_mut(&mut self.section_visibility_direction_sets) =
             visibility_data;
     }
 
     pub fn remove_section(&mut self, section_coord: i32x3) {
-        self.set_section(section_coord, false, Default::default());
+        self.set_section(section_coord, Default::default(), Default::default());
     }
 }

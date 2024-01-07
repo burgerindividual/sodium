@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use std::ops::{Add, Mul};
+use core::ops::{Add, Mul};
 
 use core_simd::simd::*;
 use std_float::StdFloat;

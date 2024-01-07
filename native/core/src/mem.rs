@@ -1,5 +1,5 @@
-use std::alloc::{GlobalAlloc, Layout};
-use std::ptr;
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr;
 
 #[global_allocator]
 static mut GLOBAL_ALLOC: GlobalLibcAllocator = GlobalLibcAllocator::uninit();

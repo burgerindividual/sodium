@@ -1,5 +1,5 @@
-use std::mem::transmute;
-use std::ops::{BitAnd, BitAndAssign};
+use core::mem::transmute;
+use core::ops::{BitAnd, BitAndAssign};
 
 use core_simd::simd::Which::*;
 use core_simd::simd::*;
@@ -48,7 +48,7 @@ impl GraphDirection {
 pub struct GraphDirectionSet(u8);
 
 impl GraphDirectionSet {
-    pub const NONE: Self = GraphDirectionSet(0);
+    pub const NONE: Self = Self(0);
 
     pub const ALL: Self = {
         let mut set = 0_u8;
@@ -59,15 +59,15 @@ impl GraphDirectionSet {
             i += 1;
         }
 
-        GraphDirectionSet(set)
+        Self(set)
     };
 
     pub const fn from(packed: u8) -> Self {
-        GraphDirectionSet(packed)
+        Self(packed)
     }
 
     pub const fn single(direction: GraphDirection) -> GraphDirectionSet {
-        GraphDirectionSet(1 << direction as u8)
+        Self(1 << direction as u8)
     }
 
     pub fn add(&mut self, dir: GraphDirection) {
@@ -89,7 +89,7 @@ impl GraphDirectionSet {
 
 impl Default for GraphDirectionSet {
     fn default() -> Self {
-        GraphDirectionSet::NONE
+        Self::NONE
     }
 }
 
@@ -97,7 +97,7 @@ impl BitAnd for GraphDirectionSet {
     type Output = GraphDirectionSet;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        GraphDirectionSet(self.0 & rhs.0)
+        Self(self.0 & rhs.0)
     }
 }
 
@@ -138,11 +138,31 @@ impl Iterator for GraphDirectionSetIter {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+/**
+ * The "Triangle" visibility format uses symmetrical properties in the
+ * visibility data to shrink its representation. This cuts memory usage
+ * taken by visibility data into a 4th of what it was.
+ *
+ * This is possible by relying on the following:
+ * If an incoming direction can "see" a particular outgoing direction, then
+ * the reverse is also true. If that outgoing direction were to be an
+ * incoming diretion, then the
+ *
+ * Old format: 36 bits, 6 bits per direction. Fits in a u64.
+ * New format: 15 bits, 1, 2, 3, 4, and 5 bits per respective direction.
+ * Fits in a u16.
+ *
+ * The layout can be seen here, where each number in the grid represents the
+ * bit location: http://tinyurl.com/sodium-vis-triangle
+ *
+ */
+#[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct VisibilityData(u16);
 
 impl VisibilityData {
+    pub const ALL_OUTGOING: Self = Self(0b0111111111111111);
+
     pub fn pack(mut raw: u64) -> Self {
         raw >>= 6;
         let mut packed = (raw & 0b1) as u16;
@@ -164,18 +184,48 @@ impl VisibilityData {
         let vis_bits = Simd::<u32, 5>::splat(self.0 as u32);
         let in_bits = Simd::<u32, 5>::splat(incoming.0 as u32);
 
-        let rows_cols = (vis_bits >> Simd::from_array([0_u32, 1_u32, 3_u32, 6_u32, 10_u32])).cast()
-            & Simd::from_array([0b1_u32, 0b11_u32, 0b111_u32, 0b1111_u32, 0b11111_u32]);
+        // Split visibility bis so each lane is associated with a direction, along with
+        // which directions that direction can see. The rows and columns both represent
+        // incoming direction -> outgoing directions.
+        let visibility_triangle = (vis_bits >> Simd::from_array([0, 1, 3, 6, 10]))
+            & Simd::from_array([0b1, 0b11, 0b111, 0b1111, 0b11111]);
 
-        let rows = (rows_cols & in_bits)
-            .cast::<i32>()
+        // Row-wise comparison between the triangle visibility structure and the
+        // incoming directions.
+        //
+        // The rows are already formatted horizontally in the same way that the incoming
+        // bits are, so we can simply do a bitwise AND between the direction.
+        //
+        // If any of the directions in a given row are set, and that direction is part
+        // of the incoming directions, this will consider that direction outgoing.
+        //
+        // The reason the 0th bit isn't worked on or possible in the true_values
+        // vector is because it will be handled by the column-wise comparison.
+        let row_comparison = (visibility_triangle & in_bits)
             .simd_ne(Simd::splat(0))
             .select(
-                Simd::from_array([0b10_u32, 0b100_u32, 0b1000_u32, 0b10000_u32, 0b100000_u32]),
-                Simd::splat(0_u32),
+                Simd::from_array([0b10, 0b100, 0b1000, 0b10000, 0b100000]),
+                Simd::splat(0),
             );
 
-        let cols = ((in_bits
+        // Column-wise comparison between the triangle visibility structure and the
+        // incoming directions.
+        //
+        // This operation fills the lanes with the value of bits
+        // [1-5] (assuming 0-based indexing), where each lane is associated with
+        // one bit.
+        //
+        // After that, the bitwise AND is done to create a mask where the visibility
+        // data and the incoming directions are both valid.
+        //
+        // The reason bit 0 is excluded is because it is already completely accounted
+        // for by the contens of the other columns, due to the symmetry of the data
+        // structure. The bitwise AND will set the 0th bit when necessary.
+        //
+        // The casting from i32 and back to u32 is to force the shift right to be an
+        // arithmetic shift right, because rust will always do arithmetic shifts for
+        // signed ints.
+        let col_comparison = ((in_bits
             << Simd::from_array([
                 u32::BITS - 2,
                 u32::BITS - 3,
@@ -184,14 +234,18 @@ impl VisibilityData {
                 u32::BITS - 6,
             ]))
         .cast::<i32>()
-            >> Simd::splat((u32::BITS - 1) as i32))
+            >> Simd::splat(31))
         .cast::<u32>()
-            & rows_cols;
+            & visibility_triangle;
 
-        // extend to po2 vectors to make the reduction happy
+        // Combine the row comparison output and the column comparison output to get the
+        // final outgoing directions value.
+        //
+        // The extension to power-of-2 vectors makes the reduction produce better
+        // codegen.
         let outgoing_bits = simd_swizzle!(
-            rows,
-            cols,
+            row_comparison,
+            col_comparison,
             [
                 First(0),
                 First(1),
@@ -211,8 +265,14 @@ impl VisibilityData {
                 Second(4),
             ]
         )
-        .reduce_or() as u8; // & !incoming
+        .reduce_or() as u8; // & !incoming // the bitwise and here doesn't seem to be necessary
 
         GraphDirectionSet(outgoing_bits)
+    }
+}
+
+impl Default for VisibilityData {
+    fn default() -> Self {
+        Self::ALL_OUTGOING
     }
 }

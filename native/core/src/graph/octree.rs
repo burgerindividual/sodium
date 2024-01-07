@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use core::mem::size_of;
 
 use core_simd::simd::*;
 
@@ -27,6 +27,7 @@ pub const LEVEL_2_COORD_MASK: u8 = 0b11111100;
 pub const LEVEL_1_COORD_MASK: u8 = 0b11111110;
 
 pub union LinearBitOctree {
+    // the divide by 8 is because there are 8 bits per byte
     level_3: [Level3Node; SECTIONS_IN_GRAPH / size_of::<Level3Node>() / 8],
     level_2: [Level2Node; SECTIONS_IN_GRAPH / size_of::<Level2Node>() / 8],
     level_1: [Level1Node; SECTIONS_IN_GRAPH / size_of::<Level1Node>() / 8],

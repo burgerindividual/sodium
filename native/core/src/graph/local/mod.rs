@@ -1,6 +1,6 @@
 pub mod index;
 
-use std::mem::transmute;
+use core::mem::transmute;
 
 use core_simd::simd::*;
 use std_float::StdFloat;
@@ -17,7 +17,7 @@ pub struct LocalCoordContext {
     // 256x256x256 cube we hold the section data in.
     pub camera_coords: f32x3,
     pub camera_section_coords: u8x3,
-    pub camera_section_index: LocalNodeIndex<1>,
+    pub camera_section_index: LocalNodeIndex<0>,
 
     pub origin_region_coords: i32x3,
 

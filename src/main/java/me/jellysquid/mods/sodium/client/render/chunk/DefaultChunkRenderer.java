@@ -104,9 +104,9 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
         while (iterator.hasNext()) {
             int sectionIndex = iterator.nextByteAsInt();
 
-            int chunkX = originX + LocalSectionIndex.unpackX(sectionIndex);
-            int chunkY = originY + LocalSectionIndex.unpackY(sectionIndex);
-            int chunkZ = originZ + LocalSectionIndex.unpackZ(sectionIndex);
+            int chunkX = originX + RegionSectionIndex.unpackX(sectionIndex);
+            int chunkY = originY + RegionSectionIndex.unpackY(sectionIndex);
+            int chunkZ = originZ + RegionSectionIndex.unpackZ(sectionIndex);
 
             var pMeshData = renderDataStorage.getDataPointer(sectionIndex);
 

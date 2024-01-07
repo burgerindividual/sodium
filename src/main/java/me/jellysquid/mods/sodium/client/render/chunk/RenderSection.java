@@ -71,7 +71,7 @@ public class RenderSection {
         int rY = this.getChunkY() & (RenderRegion.REGION_HEIGHT - 1);
         int rZ = this.getChunkZ() & (RenderRegion.REGION_LENGTH - 1);
 
-        this.sectionIndex = LocalSectionIndex.pack(rX, rY, rZ);
+        this.sectionIndex = RegionSectionIndex.pack(rX, rY, rZ);
 
         this.region = region;
     }

@@ -1,5 +1,7 @@
-use std::mem::MaybeUninit;
-use std::ptr;
+use core::mem::MaybeUninit;
+use core::ptr;
+
+use alloc::boxed::Box;
 
 pub struct ArrayDeque<T, const CAPACITY: usize> {
     head: usize,
@@ -9,15 +11,21 @@ pub struct ArrayDeque<T, const CAPACITY: usize> {
 
 impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
     pub fn push(&mut self, value: T) {
-        self.elements[self.tail] = MaybeUninit::new(value);
+        self.set_tail_element(value);
+
         self.tail += 1;
     }
 
-    pub unsafe fn push_conditionally_unchecked(&mut self, value: T, cond: bool) {
-        let holder = self.elements.get_mut(self.tail).unwrap_unchecked();
-        *holder = MaybeUninit::new(value);
+    pub fn push_conditionally(&mut self, value: T, cond: bool) {
+        self.set_tail_element(value);
 
         self.tail += if cond { 1 } else { 0 };
+    }
+
+    fn set_tail_element(&mut self, value: T) {
+        unsafe {
+            *self.elements.get_mut(self.tail).unwrap_unchecked() = MaybeUninit::new(value);
+        }
     }
 
     pub fn pop(&mut self) -> Option<&T> {
@@ -86,10 +94,19 @@ pub struct CInlineVec<T, const LEN: usize> {
 
 impl<T, const LEN: usize> CInlineVec<T, LEN> {
     pub fn push(&mut self, value: T) {
+        self.set_top_element(value);
+        self.count += 1;
+    }
+
+    pub fn push_conditionally(&mut self, value: T, cond: bool) {
+        self.set_top_element(value);
+        self.count += if cond { 1 } else { 0 };
+    }
+
+    fn set_top_element(&mut self, value: T) {
         unsafe {
             *self.data.get_mut(self.count).unwrap_unchecked() = MaybeUninit::new(value);
         }
-        self.count += 1;
     }
 
     pub fn clear(&mut self) {
@@ -104,6 +121,10 @@ impl<T, const LEN: usize> CInlineVec<T, LEN> {
 
     pub fn is_empty(&self) -> bool {
         self.count == 0
+    }
+
+    pub fn element_count(&self) -> usize {
+        self.count
     }
 
     /// # Safety
@@ -122,7 +143,7 @@ impl<T, const LEN: usize> CInlineVec<T, LEN> {
         // SAFETY: count shouldn't ever be able to be incremented past LEN, and the
         // contents should be initialized
         unsafe {
-            MaybeUninit::slice_assume_init_ref(self.data.get(0..(self.count)).unwrap_unchecked())
+            MaybeUninit::slice_assume_init_ref(self.data.get(0..self.count).unwrap_unchecked())
         }
     }
 

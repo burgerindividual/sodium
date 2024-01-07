@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 pub mod types {
-    use std::marker::PhantomData;
+    use core::marker::PhantomData;
 
-    pub type JEnv = std::ffi::c_void;
-    pub type JClass = std::ffi::c_void;
+    pub type JEnv = core::ffi::c_void;
+    pub type JClass = core::ffi::c_void;
 
     pub type Jbyte = i8;
     pub type Jshort = i16;

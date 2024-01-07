@@ -1,19 +1,31 @@
-use std::fmt::Write;
-use std::panic::PanicInfo;
-use std::string::String;
+use alloc::string::String;
+use core::fmt::Write;
+use core::panic::PanicInfo;
 
 pub type PanicHandlerFn = extern "C" fn(data: *const u8, len: i32) -> !;
 
+static mut PANIC_HANDLER: Option<PanicHandlerFn> = None;
+
 pub fn set_panic_handler(pfn: PanicHandlerFn) {
-    std::panic::set_hook(Box::new(move |info| {
-        signal_panic(info, pfn);
-    }));
+    unsafe {
+        PANIC_HANDLER = Some(pfn);
+    }
 }
 
-fn signal_panic(info: &PanicInfo, handler: PanicHandlerFn) -> ! {
+// rust analyzer cries if this isn't here
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    if let Some(handler) = unsafe { PANIC_HANDLER.as_ref() } {
+        signal_panic(info, handler)
+    } else {
+        unsafe { core::hint::unreachable_unchecked() }
+    }
+}
+
+fn signal_panic(info: &PanicInfo, handler: &PanicHandlerFn) -> ! {
     let mut message = String::new();
     write!(&mut message, "{}", info).ok();
 
-    // the java handler should contain
-    handler(message.as_ptr(), message.len() as i32)
+    (*handler)(message.as_ptr(), message.len() as i32)
 }

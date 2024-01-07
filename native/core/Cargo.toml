@@ -12,21 +12,18 @@ debug = true
 
 [profile.release]
 panic = "abort"
+debug = true
 lto = "fat"
 
 [profile.asm]
 inherits = "release"
-debug = false
 lto = "off"
 
 [profile.production]
 inherits = "release"
 lto = "fat"
-
-[profile.profiling]
-inherits = "release"
-lto = "fat"
-debug = true
+debug = false
+strip = "debuginfo"
 
 [dependencies]
 # Using these dependencies directly gives us access to setting features.

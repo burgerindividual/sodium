@@ -7,6 +7,7 @@ use core::ptr::{self, addr_of_mut};
 use core_simd::simd::Which::*;
 use core_simd::simd::*;
 use local::LocalCoordContext;
+use sodium_proc_macros::InitDefaultInPlace;
 
 use self::flags::SectionFlagSet;
 use crate::collections::{ArrayDeque, CInlineVec};
@@ -71,6 +72,7 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     count
 }
 
+#[derive(InitDefaultInPlace)]
 pub struct BfsCachedState {
     incoming_directions: [GraphDirectionSet; SECTIONS_IN_GRAPH],
     staging_render_lists: StagingRegionRenderLists,
@@ -83,17 +85,7 @@ impl BfsCachedState {
     }
 }
 
-impl InitDefaultInPlace for *mut BfsCachedState {
-    /// SAFETY: implementation has to initialize the data as a normal
-    /// constructor would
-    fn init_default_in_place(self) {
-        unsafe {
-            addr_of_mut!((*self).incoming_directions).init_default_in_place();
-            addr_of_mut!((*self).staging_render_lists).init_default_in_place();
-        }
-    }
-}
-
+#[derive(InitDefaultInPlace)]
 pub struct FrustumFogCachedState {
     section_is_visible_bits: LinearBitOctree,
 }
@@ -104,14 +96,7 @@ impl FrustumFogCachedState {
     }
 }
 
-impl InitDefaultInPlace for *mut FrustumFogCachedState {
-    fn init_default_in_place(self) {
-        unsafe {
-            addr_of_mut!((*self).section_is_visible_bits).init_default_in_place();
-        }
-    }
-}
-
+#[derive(InitDefaultInPlace)]
 pub struct Graph {
     section_visibility_direction_sets: [VisibilityData; SECTIONS_IN_GRAPH],
     section_flag_sets: [SectionFlagSet; SECTIONS_IN_GRAPH],
@@ -325,17 +310,5 @@ impl Graph {
 
     pub fn remove_section(&mut self, section_coord: i32x3) {
         self.set_section(section_coord, Default::default(), Default::default());
-    }
-}
-
-impl InitDefaultInPlace for *mut Graph {
-    fn init_default_in_place(self) {
-        unsafe {
-            addr_of_mut!((*self).section_visibility_direction_sets).init_default_in_place();
-            addr_of_mut!((*self).section_flag_sets).init_default_in_place();
-            addr_of_mut!((*self).frustum_fog_cached_state).init_default_in_place();
-            addr_of_mut!((*self).bfs_cached_state).init_default_in_place();
-            addr_of_mut!((*self).results).init_default_in_place();
-        }
     }
 }

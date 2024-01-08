@@ -1,5 +1,5 @@
 [package]
-name = "sodium-core"
+name = "sodium_core"
 version = "0.1.0"
 edition = "2021"
 
@@ -31,3 +31,4 @@ core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features =
     "all_lane_counts",
 ] }
 std_float = { git = "https://github.com/rust-lang/portable-simd.git" }
+sodium_proc_macros = { path = "../proc_macros" }

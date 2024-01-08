@@ -3,11 +3,6 @@
 version = 3
 
 [[package]]
-name = "core_simd"
-version = "0.1.0"
-source = "git+https://github.com/rust-lang/portable-simd.git#7c7dbe0c505ccbc02ff30c1e37381ab1d47bf46f"
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -26,29 +21,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "sodium_core"
-version = "0.1.0"
-dependencies = [
- "core_simd",
- "sodium_proc_macros",
- "std_float",
-]
-
-[[package]]
 name = "sodium_proc_macros"
 version = "0.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "std_float"
-version = "0.1.0"
-source = "git+https://github.com/rust-lang/portable-simd.git#7c7dbe0c505ccbc02ff30c1e37381ab1d47bf46f"
-dependencies = [
- "core_simd",
 ]
 
 [[package]]

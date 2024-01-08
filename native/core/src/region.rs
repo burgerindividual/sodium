@@ -1,6 +1,7 @@
 use core::ptr::addr_of_mut;
 
 use core_simd::simd::*;
+use sodium_proc_macros::InitDefaultInPlace;
 
 use crate::collections::CInlineVec;
 use crate::graph::flags::{SectionFlag, SectionFlagSet};
@@ -150,6 +151,7 @@ impl InitDefaultInPlace for *mut RegionRenderList {
 }
 
 #[repr(C)]
+#[derive(InitDefaultInPlace)]
 pub struct StagingRegionRenderLists {
     ordered_region_indices: CInlineVec<LocalRegionIndex, REGIONS_IN_GRAPH>,
     region_render_lists: [RegionRenderList; REGIONS_IN_GRAPH],
@@ -204,15 +206,6 @@ impl StagingRegionRenderLists {
 
         for render_list in &mut self.region_render_lists {
             render_list.clear();
-        }
-    }
-}
-
-impl InitDefaultInPlace for *mut StagingRegionRenderLists {
-    fn init_default_in_place(self) {
-        unsafe {
-            addr_of_mut!((*self).ordered_region_indices).init_default_in_place();
-            addr_of_mut!((*self).region_render_lists).init_default_in_place();
         }
     }
 }

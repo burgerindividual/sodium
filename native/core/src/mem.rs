@@ -4,9 +4,16 @@ use core::ptr;
 #[global_allocator]
 static mut GLOBAL_ALLOC: GlobalLibcAllocator = GlobalLibcAllocator::uninit();
 
-pub fn set_allocator(vtable: &LibcAllocVtable) {
+pub fn set_allocator(vtable: &LibcAllocVtable) -> bool {
     unsafe {
         GLOBAL_ALLOC = GlobalLibcAllocator::new(*vtable);
+
+        let mut error = GLOBAL_ALLOC.vtable().aligned_alloc as usize == 0;
+        error |= GLOBAL_ALLOC.vtable().aligned_free as usize == 0;
+        error |= GLOBAL_ALLOC.vtable().realloc as usize == 0;
+        error |= GLOBAL_ALLOC.vtable().calloc as usize == 0;
+
+        error
     }
 }
 
@@ -53,7 +60,6 @@ unsafe impl GlobalAlloc for GlobalLibcAllocator {
     /// Mirrors the unix libc impl for GlobalAlloc
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        // See the comment above in `alloc` for why this check looks the way it does.
         if layout.align() <= MIN_ALIGN && layout.align() <= layout.size() {
             (self.vtable().calloc)(layout.size(), 1)
         } else {
@@ -117,3 +123,28 @@ const MIN_ALIGN: usize = 16;
     all(target_arch = "xtensa", target_os = "espidf"),
 ))]
 const MIN_ALIGN: usize = 4;
+
+pub trait InitDefaultInPlace {
+    fn init_default_in_place(self);
+}
+
+// Fallback impl when a manual impl isn't specified
+impl<T: Default> InitDefaultInPlace for &*mut T {
+    fn init_default_in_place(self) {
+        unsafe {
+            self.write(T::default());
+        }
+    }
+}
+
+impl<T: Default, const LEN: usize> InitDefaultInPlace for *mut [T; LEN] {
+    fn init_default_in_place(self) {
+        unsafe {
+            let elements_ptr = self as *mut T;
+            for idx in 0..LEN {
+                // TODO: does this need to be unaligned?
+                elements_ptr.add(idx).write(T::default());
+            }
+        }
+    }
+}

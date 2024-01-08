@@ -5,6 +5,7 @@ import org.lwjgl.system.Callback;
 import org.lwjgl.system.MemoryUtil;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.regex.Matcher;
 
 public class PanicCallback extends Callback {
     private PanicCallback(long address) {
@@ -38,21 +39,24 @@ public class PanicCallback extends Callback {
 
                 log.append("# Details:\n");
 
-                log.append("# \tDescription: ")
-                        .append(panicMessage)
+                log.append("# \tDescription:\n")
+                        // prepends each line with a prefix to match the surrounding text
+                        .append(panicMessage.replaceAll(
+                                ".*\\R|.+\\z",
+                                Matcher.quoteReplacement("# \t\t") + "$0"))
                         .append('\n');
 
                 log.append("# \tFaulting thread: ")
                         .append("'")
                         .append(thread.getName())
-                        .append("' (id: ").append(thread.getId()).append(")")
+                        .append("' (id: ").append(thread.threadId()).append(")")
                         .append('\n');
 
                 log.append("# \tStack trace (J=Java code, N=Native code):\n");
 
                 if (stackTrace.length > 0) {
                     for (var elem : stackTrace) {
-                        log.append("#\t\t");
+                        log.append("# \t\t");
 
                         if (elem.isNativeMethod()) {
                             log.append("N");
@@ -63,7 +67,7 @@ public class PanicCallback extends Callback {
                         log.append(" at ").append(elem).append('\n');
                     }
                 } else {
-                    log.append("#\t\t (no stack trace information is available...)\n");
+                    log.append("# \t\t(no stack trace information is available...)\n");
                 }
 
                 log.append("# \n");

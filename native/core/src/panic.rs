@@ -6,9 +6,9 @@ pub type PanicHandlerFn = extern "C" fn(data: *const u8, len: i32) -> !;
 
 static mut PANIC_HANDLER: Option<PanicHandlerFn> = None;
 
-pub fn set_panic_handler(pfn: PanicHandlerFn) {
+pub fn set_panic_handler(panic_handler_fn_ptr: PanicHandlerFn) {
     unsafe {
-        PANIC_HANDLER = Some(pfn);
+        PANIC_HANDLER = Some(panic_handler_fn_ptr);
     }
 }
 
@@ -25,7 +25,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 fn signal_panic(info: &PanicInfo, handler: &PanicHandlerFn) -> ! {
     let mut message = String::new();
-    write!(&mut message, "{}", info).ok();
+    let _ = write!(&mut message, "{}", info);
 
     (*handler)(message.as_ptr(), message.len() as i32)
 }

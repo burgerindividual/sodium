@@ -26,21 +26,26 @@ mod java {
         _: *mut JEnv,
         _: *mut JClass,
         vtable: JPtr<LibcAllocVtable>,
-    ) {
-        let vtable = vtable.as_ref();
-
-        crate::mem::set_allocator(vtable);
+    ) -> bool {
+        if let Some(vtable) = vtable.as_ptr().as_ref() {
+            crate::mem::set_allocator(vtable)
+        } else {
+            true
+        }
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_me_jellysquid_mods_sodium_ffi_core_CoreLib_setPanicHandler(
         _: *mut JEnv,
         _: *mut JClass,
-        pfn: JPtr<PanicHandlerFn>,
-    ) {
-        let pfn = *pfn.as_ref();
-
-        crate::panic::set_panic_handler(pfn);
+        panic_handler_fn_ptr: JFnPtr<PanicHandlerFn>,
+    ) -> bool {
+        if let Some(panic_handler_fn_ptr) = panic_handler_fn_ptr.as_fn_ptr() {
+            crate::panic::set_panic_handler(panic_handler_fn_ptr);
+            false
+        } else {
+            true
+        }
     }
 
     #[no_mangle]
@@ -48,7 +53,7 @@ mod java {
         _: *mut JEnv,
         _: *mut JClass,
     ) -> Jlong {
-        let graph = Box::new(Graph::new());
+        let graph = Graph::new_boxed();
 
         Box::into_raw(graph) as usize as Jlong
     }

@@ -184,7 +184,7 @@ impl VisibilityData {
         let vis_bits = Simd::<u32, 5>::splat(self.0 as u32);
         let in_bits = Simd::<u32, 5>::splat(incoming.0 as u32);
 
-        // Split visibility bis so each lane is associated with a direction, along with
+        // Split visibility bits so each lane is associated with a direction, along with
         // which directions that direction can see. The rows and columns both represent
         // incoming direction -> outgoing directions.
         let visibility_triangle = (vis_bits >> Simd::from_array([0, 1, 3, 6, 10]))

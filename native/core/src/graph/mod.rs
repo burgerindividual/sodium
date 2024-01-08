@@ -1,4 +1,8 @@
-use core::mem::swap;
+use alloc::alloc::alloc;
+use alloc::boxed::Box;
+use core::alloc::Layout;
+use core::mem::{swap, MaybeUninit};
+use core::ptr::{self, addr_of_mut};
 
 use core_simd::simd::Which::*;
 use core_simd::simd::*;
@@ -11,6 +15,7 @@ use crate::graph::local::*;
 use crate::graph::octree::LinearBitOctree;
 use crate::graph::visibility::*;
 use crate::math::*;
+use crate::mem::InitDefaultInPlace;
 use crate::region::*;
 
 pub mod flags;
@@ -78,16 +83,17 @@ impl BfsCachedState {
     }
 }
 
-impl Default for BfsCachedState {
-    fn default() -> Self {
-        BfsCachedState {
-            incoming_directions: [GraphDirectionSet::default(); SECTIONS_IN_GRAPH],
-            staging_render_lists: Default::default(),
+impl InitDefaultInPlace for *mut BfsCachedState {
+    /// SAFETY: implementation has to initialize the data as a normal
+    /// constructor would
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).incoming_directions).init_default_in_place();
+            addr_of_mut!((*self).staging_render_lists).init_default_in_place();
         }
     }
 }
 
-#[derive(Default)]
 pub struct FrustumFogCachedState {
     section_is_visible_bits: LinearBitOctree,
 }
@@ -95,6 +101,14 @@ pub struct FrustumFogCachedState {
 impl FrustumFogCachedState {
     pub fn reset(&mut self) {
         self.section_is_visible_bits.clear();
+    }
+}
+
+impl InitDefaultInPlace for *mut FrustumFogCachedState {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).section_is_visible_bits).init_default_in_place();
+        }
     }
 }
 
@@ -109,13 +123,13 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new() -> Self {
-        Self {
-            section_visibility_direction_sets: [Default::default(); SECTIONS_IN_GRAPH],
-            section_flag_sets: [Default::default(); SECTIONS_IN_GRAPH],
-            frustum_fog_cached_state: Default::default(),
-            bfs_cached_state: Default::default(),
-            results: Default::default(),
+    pub fn new_boxed() -> Box<Self> {
+        unsafe {
+            let uninit = alloc(Layout::new::<Graph>()) as *mut Graph;
+
+            uninit.init_default_in_place();
+
+            Box::from_raw(uninit)
         }
     }
 
@@ -311,5 +325,17 @@ impl Graph {
 
     pub fn remove_section(&mut self, section_coord: i32x3) {
         self.set_section(section_coord, Default::default(), Default::default());
+    }
+}
+
+impl InitDefaultInPlace for *mut Graph {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).section_visibility_direction_sets).init_default_in_place();
+            addr_of_mut!((*self).section_flag_sets).init_default_in_place();
+            addr_of_mut!((*self).frustum_fog_cached_state).init_default_in_place();
+            addr_of_mut!((*self).bfs_cached_state).init_default_in_place();
+            addr_of_mut!((*self).results).init_default_in_place();
+        }
     }
 }

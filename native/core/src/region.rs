@@ -1,4 +1,4 @@
-use core::mem::MaybeUninit;
+use core::ptr::addr_of_mut;
 
 use core_simd::simd::*;
 
@@ -7,6 +7,7 @@ use crate::graph::flags::{SectionFlag, SectionFlagSet};
 use crate::graph::local::LocalCoordContext;
 use crate::graph::SortedRegionRenderLists;
 use crate::math::*;
+use crate::mem::InitDefaultInPlace;
 
 pub const SECTIONS_IN_REGION: usize = 8 * 4 * 8;
 pub const REGION_COORD_SHIFT: u8x3 = Simd::from_array([3, 2, 3]);
@@ -137,6 +138,17 @@ impl Default for RegionRenderList {
     }
 }
 
+impl InitDefaultInPlace for *mut RegionRenderList {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).region_coords).write(RegionRenderList::UNDEFINED_REGION_COORDS);
+            addr_of_mut!((*self).sections_with_geometry).init_default_in_place();
+            addr_of_mut!((*self).sections_with_sprites).init_default_in_place();
+            addr_of_mut!((*self).sections_with_block_entities).init_default_in_place();
+        }
+    }
+}
+
 #[repr(C)]
 pub struct StagingRegionRenderLists {
     ordered_region_indices: CInlineVec<LocalRegionIndex, REGIONS_IN_GRAPH>,
@@ -196,25 +208,11 @@ impl StagingRegionRenderLists {
     }
 }
 
-impl Default for StagingRegionRenderLists {
-    fn default() -> Self {
-        // don't wanna impl copy trait for all RegionDrawBatches because it's probably
-        // not a good idea. instead, create an array and manually set each to
-        // the default.
-        let draw_batches = unsafe {
-            let mut draw_batches_uninit =
-                MaybeUninit::<[RegionRenderList; REGIONS_IN_GRAPH]>::uninit();
-
-            for draw_batch_mut in (*draw_batches_uninit.as_mut_ptr()).iter_mut() {
-                *draw_batch_mut = Default::default();
-            }
-
-            draw_batches_uninit.assume_init()
-        };
-
-        Self {
-            region_render_lists: draw_batches,
-            ordered_region_indices: Default::default(),
+impl InitDefaultInPlace for *mut StagingRegionRenderLists {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).ordered_region_indices).init_default_in_place();
+            addr_of_mut!((*self).region_render_lists).init_default_in_place();
         }
     }
 }

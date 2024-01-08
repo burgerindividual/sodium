@@ -1,7 +1,8 @@
-use core::mem::MaybeUninit;
-use core::ptr;
-
 use alloc::boxed::Box;
+use core::mem::MaybeUninit;
+use core::ptr::{self, addr_of_mut};
+
+use crate::mem::InitDefaultInPlace;
 
 pub struct ArrayDeque<T, const CAPACITY: usize> {
     head: usize,
@@ -59,10 +60,18 @@ impl<T, const CAPACITY: usize> Default for ArrayDeque<T, CAPACITY> {
         Self {
             head: 0,
             tail: 0,
-
-            // MaybeUninit::uninit_array::<CAPACITY>()
-            // https://github.com/rust-lang/rust/issues/96097
             elements: unsafe { MaybeUninit::<[MaybeUninit<T>; CAPACITY]>::uninit().assume_init() },
+        }
+    }
+}
+
+impl<T, const CAPACITY: usize> InitDefaultInPlace for *mut ArrayDeque<T, CAPACITY> {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).head).write(0);
+            addr_of_mut!((*self).tail).write(0);
+            // skip initialization of data array because the contents don't
+            // matter
         }
     }
 }
@@ -87,12 +96,12 @@ impl<T> CVec<T> {
 }
 
 #[repr(C)]
-pub struct CInlineVec<T, const LEN: usize> {
-    data: [MaybeUninit<T>; LEN],
+pub struct CInlineVec<T, const CAPACITY: usize> {
     count: usize,
+    data: [MaybeUninit<T>; CAPACITY],
 }
 
-impl<T, const LEN: usize> CInlineVec<T, LEN> {
+impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
     pub fn push(&mut self, value: T) {
         self.set_top_element(value);
         self.count += 1;
@@ -158,19 +167,29 @@ impl<T, const LEN: usize> CInlineVec<T, LEN> {
     }
 }
 
-impl<T, const LEN: usize> Default for CInlineVec<T, LEN> {
+impl<T, const CAPACITY: usize> Default for CInlineVec<T, CAPACITY> {
     fn default() -> Self {
         Self {
-            data: unsafe { MaybeUninit::<[MaybeUninit<T>; LEN]>::uninit().assume_init() },
+            data: unsafe { MaybeUninit::<[MaybeUninit<T>; CAPACITY]>::uninit().assume_init() },
             count: 0,
         }
     }
 }
 
-impl<T: Copy, const LEN: usize> Clone for CInlineVec<T, LEN> {
+impl<T, const CAPACITY: usize> InitDefaultInPlace for *mut CInlineVec<T, CAPACITY> {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).count).write(0);
+            // skip initialization of data array because the contents don't
+            // matter
+        }
+    }
+}
+
+impl<T: Copy, const CAPACITY: usize> Clone for CInlineVec<T, CAPACITY> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: Copy, const LEN: usize> Copy for CInlineVec<T, LEN> {}
+impl<T: Copy, const CAPACITY: usize> Copy for CInlineVec<T, CAPACITY> {}

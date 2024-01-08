@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
 pub mod types {
-    use core::marker::PhantomData;
+    use core::marker::{FnPtr, PhantomData};
+    use core::mem::transmute_copy;
 
     pub type JEnv = core::ffi::c_void;
     pub type JClass = core::ffi::c_void;
@@ -24,7 +25,7 @@ pub mod types {
         _type: PhantomData<T>,
     }
 
-    impl<T: Sized> JPtr<T> {
+    impl<T> JPtr<T> {
         /// SAFETY: The pointer must be of type T
         pub unsafe fn as_ref(&self) -> &T {
             let ptr = self.as_ptr();
@@ -43,7 +44,7 @@ pub mod types {
         _type: PhantomData<T>,
     }
 
-    impl<T: Sized> JPtrMut<T> {
+    impl<T> JPtrMut<T> {
         /// SAFETY: The pointer must be of type T
         /// SAFETY: The backing memory of the pointer must allow mutating
         /// SAFETY: This consumes the JPtrMut instance to uphold borrow checker
@@ -58,6 +59,23 @@ pub mod types {
         /// rules
         pub unsafe fn into_mut_ptr(self) -> *mut T {
             self.addr as *mut T
+        }
+    }
+
+    #[repr(transparent)]
+    pub struct JFnPtr<T: FnPtr> {
+        addr: Jlong,
+        _type: PhantomData<T>,
+    }
+
+    impl<T: FnPtr> JFnPtr<T> {
+        /// SAFETY: The pointer must be of type T
+        pub unsafe fn as_fn_ptr(&self) -> Option<T> {
+            if self.addr == 0 {
+                return None;
+            }
+
+            Some(transmute_copy::<_, T>(&self.addr))
         }
     }
 }

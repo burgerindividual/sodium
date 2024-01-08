@@ -4,6 +4,7 @@ import org.joml.FrustumIntersection;
 import org.joml.Vector3d;
 import org.joml.Vector4f;
 import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 
@@ -81,44 +82,52 @@ public class CoreLib {
     }
 
     private static void initPanicHandler() {
-        CoreLib.setPanicHandler(CALLBACK.address());
+        boolean error = CoreLib.setPanicHandler(CALLBACK.address());
+        if (error) {
+            throw new RuntimeException("Error setting panic handler for CoreLib");
+        }
     }
 
     private static void initAllocator(MemoryUtil.MemoryAllocator allocator) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            PointerBuffer pfn = stack.mallocPointer(4);
-            pfn.put(0 /* aligned_alloc */, allocator.getAlignedAlloc());
-            pfn.put(1 /* aligned_free */, allocator.getAlignedFree());
-            pfn.put(2 /* realloc */, allocator.getRealloc());
-            pfn.put(3 /* calloc */, allocator.getCalloc());
+            PointerBuffer pfns = stack.mallocPointer(4);
+            pfns.put(0 /* aligned_alloc */, allocator.getAlignedAlloc());
+            pfns.put(1 /* aligned_free */, allocator.getAlignedFree());
+            pfns.put(2 /* realloc */, allocator.getRealloc());
+            pfns.put(3 /* calloc */, allocator.getCalloc());
 
-            CoreLib.setAllocator(pfn.address());
+            boolean error = CoreLib.setAllocator(pfns.address());
+            if (error) {
+                throw new RuntimeException("Error setting memory allocator for CoreLib");
+            }
         }
     }
 
-    static native void setAllocator(long pAllocatorPfns);
+    public static native boolean setAllocator(long pAllocatorPfns);
 
-    static native void setPanicHandler(long pFnPanicHandler);
+    public static native boolean setPanicHandler(long pFnPanicHandler);
 
     /**
      * Returns a pointer to the created graph
      */
-    static native long graphCreate();
+    public static native long graphCreate();
 
-    static native void graphSetSection(
+    public static native void graphSetSection(
             long pGraph,
             int x,
             int y,
             int z,
-            boolean hasGeometry,
-            long visibilityData);
+            long visibilityData,
+            byte flags);
 
-    static native void graphRemoveSection(long pGraph, int x, int y, int z);
+    public static native void graphRemoveSection(long pGraph, int x, int y, int z);
 
     /**
-     * Returns a pointer to the search results
+     * Returns a pointer to the search results.
+     * This pointer does not need to be freed or deleted, as it is cached as part of
+     * the graph. If the graph is deleted, this pointer is invalid.
      */
-    static native long graphSearch(
+    public static native long graphSearch(
             long pGraph,
             long pFrustum,
             short viewDistance,
@@ -127,9 +136,12 @@ public class CoreLib {
             byte topSection,
             boolean disableOcclusionCulling);
 
-    static native void graphDelete(long pGraph);
+    /**
+     * The pointer provided is invalid after calling this method.
+     */
+    public static native void graphDelete(long pGraph);
 
     static {
-        System.loadLibrary("sodium_core");
+        Library.loadSystem("me.jellysquid.mods.sodium", "natives/libsodium_core.so");
     }
 }

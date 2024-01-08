@@ -33,10 +33,10 @@ pub union LinearBitOctree {
     level_1: [Level1Node; SECTIONS_IN_GRAPH / size_of::<Level1Node>() / 8],
 }
 
-impl Default for LinearBitOctree {
-    fn default() -> Self {
-        LinearBitOctree {
-            level_3: [Level3Node::splat(0); SECTIONS_IN_GRAPH / size_of::<Level3Node>() / 8],
+impl InitDefaultInPlace for *mut LinearBitOctree {
+    fn init_default_in_place(self) {
+        unsafe {
+            addr_of_mut!((*self).level_3).init_default_in_place();
         }
     }
 }

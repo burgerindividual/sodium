@@ -29,9 +29,9 @@ pub struct LocalCoordContext {
     // this is the index that encompasses the corner of the view distance bounding box where the
     // coordinate for each axis is closest to negative infinity, and truncated to the origin of the
     // level 3 node it's contained in.
-    pub iter_node_origin_index: LocalNodeIndex<3>,
-    pub iter_node_origin_coords: u8x3,
+    pub iter_start_index: LocalNodeIndex<3>,
     pub level_3_node_iters: u8x3,
+    pub iter_start_section_coords: u8x3,
 }
 
 impl LocalCoordContext {
@@ -68,14 +68,14 @@ impl LocalCoordContext {
             >> REGION_COORD_SHIFT.cast::<i64>())
         .cast::<i32>();
 
-        let iter_section_origin_coords = simd_swizzle!(
+        // the bitwise AND truncates it to the closest level 3 node origin
+        let iter_start_section_coords = simd_swizzle!(
             camera_section_coords - Simd::splat(section_view_distance),
             Simd::splat(world_bottom_section_y as u8),
             [First(X), Second(0), First(Z)]
-        );
-
-        let iter_node_origin_coords = iter_section_origin_coords & u8x3::splat(LEVEL_3_COORD_MASK);
-        let iter_node_origin_index = LocalNodeIndex::pack(iter_node_origin_coords);
+        ) & u8x3::splat(LEVEL_3_COORD_MASK);
+        let iter_start_index =
+            LocalNodeIndex::pack(iter_start_section_coords >> u8x3::splat(LEVEL_3_COORD_SHIFT));
 
         let view_cube_length = (section_view_distance * 2) + 1;
         // convert to i32 to avoid implicit wrapping, then explicitly wrap.
@@ -96,7 +96,7 @@ impl LocalCoordContext {
 
         let fog_distance_squared = search_distance * search_distance;
 
-        LocalCoordContext {
+        Self {
             frustum,
             camera_coords,
             camera_section_index,
@@ -105,9 +105,9 @@ impl LocalCoordContext {
             fog_distance_squared,
             world_bottom_section_y,
             world_top_section_y,
-            iter_node_origin_index,
-            iter_node_origin_coords,
+            iter_start_index,
             level_3_node_iters,
+            iter_start_section_coords,
         }
     }
 
@@ -203,7 +203,7 @@ impl LocalCoordContext {
     fn node_get_local_bounds<const LEVEL: u8>(&self, local_node_pos: u8x3) -> LocalBoundingBox {
         let min_pos = local_node_pos.cast::<f32>()
             + local_node_pos
-                .simd_lt(self.iter_node_origin_coords)
+                .simd_lt(self.iter_start_section_coords) // if this has underflown, we need to do some bullshit with negatives
                 .cast()
                 .select(Simd::splat(256.0_f32), Simd::splat(0.0_f32))
             - self.camera_coords;

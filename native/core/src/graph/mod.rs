@@ -1,7 +1,7 @@
 use alloc::alloc::alloc;
 use alloc::boxed::Box;
 use core::alloc::Layout;
-use core::mem::{size_of, swap};
+use core::mem::swap;
 use core::ptr::addr_of_mut;
 
 use core_simd::simd::Which::*;
@@ -142,7 +142,7 @@ impl Graph {
     }
 
     fn frustum_and_fog_cull(&mut self, coord_context: &LocalCoordContext) {
-        let mut level_3_index = coord_context.iter_node_origin_index;
+        let mut level_3_index = coord_context.iter_start_index;
 
         // this could go more linearly in memory, but we probably have good enough
         // locality inside the level 3 nodes

@@ -1,7 +1,7 @@
 use alloc::alloc::alloc;
 use alloc::boxed::Box;
 use core::alloc::Layout;
-use core::mem::{swap, size_of};
+use core::mem::{size_of, swap};
 use core::ptr::addr_of_mut;
 
 use core_simd::simd::Which::*;
@@ -65,11 +65,10 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     // The frustum can never be wider than 180 degrees, so we can cut the number in
     // half... almost. We have to give a buffer of an extra 5% (arbitrarily
     // selected) because of 2 reasons:
-    // 1. Frustum/fog culling is checked after the section has already been added to
-    //    the queue, not before.
-    // 2. The frustum includes sections that are just barely in view, adding more
-    //    than half in a worst-case scenario. This effect becomes more noticeable at
-    //    smaller render distances.
+    // 1. Frustum/fog culling is checked after the section has already been added to the queue, not
+    //    before.
+    // 2. The frustum includes sections that are just barely in view, adding more than half in a
+    //    worst-case scenario. This effect becomes more noticeable at smaller render distances.
     count = (count * 100) / 55;
 
     count

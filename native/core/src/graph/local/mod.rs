@@ -40,11 +40,13 @@ impl LocalCoordContext {
     pub fn new(
         frustum_planes: [f32x6; 4],
         camera_world_pos: f64x3,
-        section_view_distance: u8,
-        fog_distance: f32,
+        search_distance: f32,
         world_bottom_section_y: i8,
         world_top_section_y: i8,
     ) -> Self {
+        // this should never be negative, and we want to truncate
+        let section_view_distance = (search_distance / 16.0) as u8;
+
         debug_assert!(
             section_view_distance <= MAX_VIEW_DISTANCE,
             "View distances above 127 are not supported"
@@ -92,9 +94,7 @@ impl LocalCoordContext {
             + Simd::splat(LEVEL_3_COORD_LENGTH - 1))
             >> Simd::splat(LEVEL_3_COORD_SHIFT);
 
-        // this lower bound may not be necessary
-        let fog_distance_capped = fog_distance.min(((section_view_distance + 1) << 4) as f32);
-        let fog_distance_squared = fog_distance_capped * fog_distance_capped;
+        let fog_distance_squared = search_distance * search_distance;
 
         LocalCoordContext {
             frustum,

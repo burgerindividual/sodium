@@ -4,7 +4,6 @@ use core_simd::simd::*;
 use sodium_proc_macros::InitDefaultInPlace;
 
 use crate::collections::CInlineVec;
-use crate::graph::flags::{SectionFlag, SectionFlagSet};
 use crate::graph::local::LocalCoordContext;
 use crate::graph::SortedRegionRenderLists;
 use crate::math::*;
@@ -78,29 +77,31 @@ impl RegionSectionIndex {
 #[repr(C)]
 pub struct RegionRenderList {
     region_coords: i32x3,
-    sections_with_geometry: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
-    sections_with_sprites: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
-    sections_with_block_entities: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
+    // sections_with_geometry: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
+    // sections_with_sprites: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
+    // sections_with_block_entities: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
+    section_indices: CInlineVec<RegionSectionIndex, SECTIONS_IN_REGION>,
 }
 
 impl RegionRenderList {
     pub const UNDEFINED_REGION_COORDS: i32x3 = Simd::from_array([i32::MIN; 3]);
 
-    pub fn add_section(&mut self, section_flags: SectionFlagSet, local_section_coord: u8x3) {
+    pub fn add_section(&mut self, local_section_coord: u8x3) {
         let region_section_index = RegionSectionIndex::from_local_section(local_section_coord);
-        // only add to each section list if the flag is satisfied
-        self.sections_with_geometry.push_conditionally(
-            region_section_index,
-            section_flags.contains(SectionFlag::HasBlockGeometry),
-        );
-        self.sections_with_sprites.push_conditionally(
-            region_section_index,
-            section_flags.contains(SectionFlag::HasAnimatedSprites),
-        );
-        self.sections_with_block_entities.push_conditionally(
-            region_section_index,
-            section_flags.contains(SectionFlag::HasBlockEntities),
-        );
+        // // only add to each section list if the flag is satisfied
+        // self.sections_with_geometry.push_conditionally(
+        //     region_section_index,
+        //     section_flags.contains(SectionFlag::HasBlockGeometry),
+        // );
+        // self.sections_with_sprites.push_conditionally(
+        //     region_section_index,
+        //     section_flags.contains(SectionFlag::HasAnimatedSprites),
+        // );
+        // self.sections_with_block_entities.push_conditionally(
+        //     region_section_index,
+        //     section_flags.contains(SectionFlag::HasBlockEntities),
+        // );
+        self.section_indices.push(region_section_index);
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -114,28 +115,19 @@ impl RegionRenderList {
     pub fn is_empty(&self) -> bool {
         // this is safe because we know that the sum of the element counts can never
         // overflow, due to the maximum sizes of the vectors
-        self.sections_with_geometry.element_count()
-            + self.sections_with_sprites.element_count()
-            + self.sections_with_block_entities.element_count()
-            == 0
+        // self.sections_with_geometry.element_count()
+        //     + self.sections_with_sprites.element_count()
+        //     + self.sections_with_block_entities.element_count()
+        //     == 0
+        self.section_indices.is_empty()
     }
 
     pub fn clear(&mut self) {
         self.region_coords = Self::UNDEFINED_REGION_COORDS;
-        self.sections_with_geometry.clear();
-        self.sections_with_sprites.clear();
-        self.sections_with_block_entities.clear();
-    }
-}
-
-impl Default for RegionRenderList {
-    fn default() -> Self {
-        Self {
-            region_coords: Self::UNDEFINED_REGION_COORDS,
-            sections_with_geometry: Default::default(),
-            sections_with_sprites: Default::default(),
-            sections_with_block_entities: Default::default(),
-        }
+        self.section_indices.clear();
+        // self.sections_with_geometry.clear();
+        // self.sections_with_sprites.clear();
+        // self.sections_with_block_entities.clear();
     }
 }
 
@@ -143,9 +135,12 @@ impl InitDefaultInPlace for *mut RegionRenderList {
     fn init_default_in_place(self) {
         unsafe {
             addr_of_mut!((*self).region_coords).write(RegionRenderList::UNDEFINED_REGION_COORDS);
-            addr_of_mut!((*self).sections_with_geometry).init_default_in_place();
-            addr_of_mut!((*self).sections_with_sprites).init_default_in_place();
-            addr_of_mut!((*self).sections_with_block_entities).init_default_in_place();
+            addr_of_mut!((*self).section_indices).init_default_in_place();
+            // addr_of_mut!((*self).sections_with_geometry).
+            // init_default_in_place(); addr_of_mut!((*self).
+            // sections_with_sprites).init_default_in_place();
+            // addr_of_mut!((*self).sections_with_block_entities).
+            // init_default_in_place();
         }
     }
 }
@@ -154,7 +149,7 @@ impl InitDefaultInPlace for *mut RegionRenderList {
 #[derive(InitDefaultInPlace)]
 pub struct StagingRegionRenderLists {
     ordered_region_indices: CInlineVec<LocalRegionIndex, REGIONS_IN_GRAPH>,
-    region_render_lists: [RegionRenderList; REGIONS_IN_GRAPH],
+    region_render_lists: [RegionRenderList; REGIONS_IN_GRAPH as usize],
 }
 
 impl StagingRegionRenderLists {
@@ -175,7 +170,7 @@ impl StagingRegionRenderLists {
 
         // we only want to add the region on the first encounter of the region to get
         // the correct render order
-        if region_render_list.is_initialized() {
+        if !region_render_list.is_initialized() {
             region_render_list.initialize(global_region_coords);
             self.ordered_region_indices.push(local_region_index);
         } else {

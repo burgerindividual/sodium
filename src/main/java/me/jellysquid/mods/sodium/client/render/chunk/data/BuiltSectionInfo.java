@@ -16,7 +16,8 @@ import java.util.*;
 import java.util.function.IntFunction;
 
 /**
- * The render data for a chunk render container containing all the information about which meshes are attached, the
+ * The render data for a chunk render container containing all the information
+ * about which meshes are attached, the
  * block entities contained by it, and any data used for occlusion testing.
  */
 public class BuiltSectionInfo {
@@ -25,9 +26,9 @@ public class BuiltSectionInfo {
     public final int flags;
     public final long visibilityData;
 
-    public final BlockEntity @Nullable[] globalBlockEntities;
-    public final BlockEntity @Nullable[] culledBlockEntities;
-    public final Sprite @Nullable[] animatedSprites;
+    public final BlockEntity @Nullable [] globalBlockEntities;
+    public final BlockEntity @Nullable [] culledBlockEntities;
+    public final Sprite @Nullable [] animatedSprites;
 
     private BuiltSectionInfo(@NotNull Collection<TerrainRenderPass> blockRenderPasses,
                              @NotNull Collection<BlockEntity> globalBlockEntities,
@@ -54,7 +55,7 @@ public class BuiltSectionInfo {
 
         this.flags = flags;
 
-        this.visibilityData = VisibilityEncoding.encode(occlusionData);
+        this.visibilityData = VisibilityEncoding.extract(occlusionData);
     }
 
     public static class Builder {
@@ -74,8 +75,10 @@ public class BuiltSectionInfo {
         }
 
         /**
-         * Adds a sprite to this data container for tracking. If the sprite is tickable, it will be ticked every frame
+         * Adds a sprite to this data container for tracking. If the sprite is tickable,
+         * it will be ticked every frame
          * before rendering as necessary.
+         *
          * @param sprite The sprite
          */
         public void addSprite(Sprite sprite) {
@@ -86,15 +89,18 @@ public class BuiltSectionInfo {
 
         /**
          * Adds a block entity to the data container.
+         *
          * @param entity The block entity itself
-         * @param cull True if the block entity can be culled to this chunk render's volume, otherwise false
+         * @param cull   True if the block entity can be culled to this chunk render's
+         *               volume, otherwise false
          */
         public void addBlockEntity(BlockEntity entity, boolean cull) {
             (cull ? this.culledBlockEntities : this.globalBlockEntities).add(entity);
         }
 
         public BuiltSectionInfo build() {
-            return new BuiltSectionInfo(this.blockRenderPasses, this.globalBlockEntities, this.culledBlockEntities, this.animatedSprites, this.occlusionData);
+            return new BuiltSectionInfo(this.blockRenderPasses, this.globalBlockEntities, this.culledBlockEntities,
+                    this.animatedSprites, this.occlusionData);
         }
     }
 

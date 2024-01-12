@@ -139,22 +139,21 @@ impl Iterator for GraphDirectionSetIter {
 }
 
 /**
- * The "Triangle" visibility format uses symmetrical properties in the
- * visibility data to shrink its representation. This cuts memory usage
- * taken by visibility data into a 4th of what it was.
- *
- * This is possible by relying on the following:
- * If an incoming direction can "see" a particular outgoing direction, then
- * the reverse is also true. If that outgoing direction were to be an
- * incoming diretion, then the
- *
- * Old format: 36 bits, 6 bits per direction. Fits in a u64.
- * New format: 15 bits, 1, 2, 3, 4, and 5 bits per respective direction.
- * Fits in a u16.
- *
- * The layout can be seen here, where each number in the grid represents the
- * bit location: http://tinyurl.com/sodium-vis-triangle
- *
+The "Triangle" visibility format uses symmetrical properties in the
+visibility data to shrink its representation. This cuts memory usage
+taken by visibility data into a 4th of what it was.
+
+This is possible by relying on the following:
+If an incoming direction can "see" a particular outgoing direction, then
+the reverse is also true. If that outgoing direction were to be an
+incoming diretion, then the
+
+Old format: 36 bits, 6 bits per direction. Fits in a u64.
+New format: 15 bits, 1, 2, 3, 4, and 5 bits per respective direction.
+Fits in a u16.
+
+The layout can be seen here, where each number in the grid represents the
+bit location: http://tinyurl.com/sodium-vis-triangle
  */
 #[derive(Clone, Copy)]
 #[repr(transparent)]

@@ -3,7 +3,7 @@ package me.jellysquid.mods.sodium.client.render.viewport.frustum;
 import org.joml.FrustumIntersection;
 
 public final class SimpleFrustum implements Frustum {
-    private final FrustumIntersection frustum;
+    public final FrustumIntersection frustum;
 
     public SimpleFrustum(FrustumIntersection frustumIntersection) {
         this.frustum = frustumIntersection;

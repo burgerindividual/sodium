@@ -7,8 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [profile.dev]
+opt-level = 1
 panic = "abort"
-debug = true
+lto = "thin"
 
 [profile.release]
 panic = "abort"

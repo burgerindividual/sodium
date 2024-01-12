@@ -13,17 +13,5 @@ public class SodiumPreLaunch implements PreLaunchEntrypoint {
         EarlyDriverScanner.scanDrivers();
         Workarounds.init();
         CoreLib.init();
-
-        // test CoreLib
-        long pGraph = CoreLib.graphCreate();
-        CoreLib.graphSetSection(
-                pGraph,
-                5,
-                5,
-                5,
-                0b111111_111111_111111_111111_111111_111111l,
-                (byte) 0b111);
-        CoreLib.graphRemoveSection(pGraph, 5, 5, 5);
-        CoreLib.graphDelete(pGraph);
     }
 }

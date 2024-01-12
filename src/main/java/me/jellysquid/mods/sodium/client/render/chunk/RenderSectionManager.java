@@ -30,10 +30,12 @@ import me.jellysquid.mods.sodium.client.render.texture.SpriteUtil;
 import me.jellysquid.mods.sodium.client.render.util.RenderAsserts;
 import me.jellysquid.mods.sodium.client.render.viewport.CameraTransform;
 import me.jellysquid.mods.sodium.client.render.viewport.Viewport;
+import me.jellysquid.mods.sodium.client.render.viewport.frustum.SimpleFrustum;
 import me.jellysquid.mods.sodium.client.util.MathUtil;
 import me.jellysquid.mods.sodium.client.world.WorldSlice;
 import me.jellysquid.mods.sodium.client.world.cloned.ChunkRenderContext;
 import me.jellysquid.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import me.jellysquid.mods.sodium.ffi.core.CoreLib;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.texture.Sprite;
@@ -46,6 +48,10 @@ import net.minecraft.world.chunk.ChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.joml.FrustumIntersection;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.Pointer;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -67,6 +73,8 @@ public class RenderSectionManager {
     private final ReferenceSet<RenderSection> sectionsWithGlobalEntities = new ReferenceOpenHashSet<>();
 
     private final OcclusionCuller occlusionCuller;
+
+    private final long pGraph;
 
     private final int renderDistance;
 
@@ -95,7 +103,9 @@ public class RenderSectionManager {
         this.sectionCache = new ClonedChunkSectionCache(this.world);
 
         this.renderLists = SortedRenderLists.empty();
-        this.occlusionCuller = new OcclusionCuller(Long2ReferenceMaps.unmodifiable(this.sectionByPosition), this.world);
+        this.occlusionCuller = new OcclusionCuller(
+                Long2ReferenceMaps.unmodifiable(this.sectionByPosition), this.world);
+        this.pGraph = CoreLib.graphCreate();
 
         this.rebuildLists = new EnumMap<>(ChunkUpdateType.class);
 
@@ -121,7 +131,63 @@ public class RenderSectionManager {
 
         var visitor = new VisibleChunkCollector(frame);
 
-        this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        // this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        
+        // TODO: move all of this to somewhere else
+        long pSearchResults;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            // FIXME: disgusting, figure out a better way to handle this.
+            FrustumIntersection intersection = ((SimpleFrustum) viewport.getFrustum()).frustum;
+            long pFrustum = CoreLib.frustumCreate(stack, intersection, viewport.getTransform());
+            pSearchResults = CoreLib.graphSearch(
+                this.pGraph,
+                pFrustum,
+                searchDistance,
+                (byte) this.world.getBottomSectionCoord(),
+                (byte) this.world.getTopSectionCoord(),
+                useOcclusionCulling
+            );
+        }
+
+        // Any variable prefixed with a "u" must be treated as unsigned
+        int uRegionCount = MemoryUtil.memGetInt(pSearchResults);
+        pSearchResults += Integer.SIZE;
+
+        for (int regionIdx = 0; Integer.compareUnsigned(regionIdx, uRegionCount) < 0; regionIdx++) {
+            // each RegionRenderList is 288 bytes
+            long regionPtrOffset = regionIdx * 288;
+            int regionSectionX = RenderRegion.toChunkX(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset)
+            );
+            int regionSectionY = RenderRegion.toChunkY(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset + 4)
+            );
+            int regionSectionZ = RenderRegion.toChunkZ(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset + 8)
+            );
+            
+            // the region coords are aligned to 16 bytes
+            regionPtrOffset += 16;
+
+            int uSectionCount = MemoryUtil.memGetInt(pSearchResults + regionPtrOffset);
+            for (int sectionIdx = 0; Integer.compareUnsigned(sectionIdx, uSectionCount) < 0; sectionIdx++) {
+                // each RegionSectionIndex is 1 byte
+                long sectionPtrIdx = sectionIdx;
+
+                // TODO: do these in batches of 8 with getLong
+                byte packedSectionCoord = MemoryUtil.memGetByte(pSearchResults + regionPtrOffset + sectionPtrIdx);
+
+                int sectionX = RegionSectionIndex.unpackX(packedSectionCoord) + regionSectionX;
+                int sectionY = RegionSectionIndex.unpackY(packedSectionCoord) + regionSectionY;
+                int sectionZ = RegionSectionIndex.unpackZ(packedSectionCoord) + regionSectionZ;
+
+                long sectionKey = ChunkSectionPos.asLong(sectionX, sectionY, sectionZ);
+                RenderSection section = this.sectionByPosition.get(sectionKey);
+
+                visitor.accept(section);
+            }
+
+        }
 
         this.renderLists = visitor.createRenderLists();
         this.rebuildLists = visitor.getRebuildLists();
@@ -143,9 +209,7 @@ public class RenderSectionManager {
         final boolean useOcclusionCulling;
         BlockPos origin = camera.getBlockPos();
 
-        if (spectator && this.world.getBlockState(origin)
-                .isOpaqueFullCube(this.world, origin))
-        {
+        if (spectator && this.world.getBlockState(origin).isOpaqueFullCube(this.world, origin)) {
             useOcclusionCulling = false;
         } else {
             useOcclusionCulling = MinecraftClient.getInstance().chunkCullingEnabled;
@@ -204,6 +268,8 @@ public class RenderSectionManager {
 
         this.disconnectNeighborNodes(section);
         this.updateSectionInfo(section, null);
+
+        CoreLib.graphRemoveSection(this.pGraph, x, y, z);
 
         section.delete();
 
@@ -267,7 +333,8 @@ public class RenderSectionManager {
         this.regions.update();
 
         var blockingRebuilds = new ChunkJobCollector(Integer.MAX_VALUE, this.buildResults::add);
-        var deferredRebuilds = new ChunkJobCollector(this.builder.getSchedulingBudget(), this.buildResults::add);
+        var deferredRebuilds = new ChunkJobCollector(
+                this.builder.getSchedulingBudget(), this.buildResults::add);
 
         this.submitRebuildTasks(blockingRebuilds, ChunkUpdateType.IMPORTANT_REBUILD);
         this.submitRebuildTasks(updateImmediately ? blockingRebuilds : deferredRebuilds, ChunkUpdateType.REBUILD);
@@ -318,6 +385,10 @@ public class RenderSectionManager {
         } else {
             this.sectionsWithGlobalEntities.add(render);
         }
+
+        CoreLib.graphSetSection(
+                this.pGraph, render.getChunkX(), render.getChunkY(), render.getChunkZ(), render.getVisibilityData()
+        );
     }
 
     private static List<ChunkBuildOutput> filterChunkBuildResults(ArrayList<ChunkBuildOutput> outputs) {
@@ -369,7 +440,8 @@ public class RenderSectionManager {
 
                 section.setBuildCancellationToken(job);
             } else {
-                var result = ChunkJobResult.successfully(new ChunkBuildOutput(section, BuiltSectionInfo.EMPTY, Collections.emptyMap(), frame));
+                var result = ChunkJobResult.successfully(new ChunkBuildOutput(
+                        section, BuiltSectionInfo.EMPTY, Collections.emptyMap(), frame));
                 this.buildResults.add(result);
 
                 section.setBuildCancellationToken(null);
@@ -406,11 +478,14 @@ public class RenderSectionManager {
         this.builder.shutdown(); // stop all the workers, and cancel any tasks
 
         for (var result : this.collectChunkBuildResults()) {
-            result.delete(); // delete resources for any pending tasks (including those that were cancelled)
+            result.delete(); // delete resources for any pending tasks (including
+            // those that were cancelled)
         }
 
         this.sectionsWithGlobalEntities.clear();
         this.resetRenderLists();
+
+        CoreLib.graphDelete(this.pGraph);
 
         try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
             this.regions.delete(commandList);
@@ -474,7 +549,8 @@ public class RenderSectionManager {
 
         var renderDistance = this.getRenderDistance();
 
-        // The fog must be fully opaque in order to skip rendering of chunks behind it
+        // The fog must be fully opaque in order to skip rendering of chunks behind
+        // it
         if (!MathHelper.approximatelyEquals(color[3], 1.0f)) {
             return renderDistance;
         }
@@ -488,9 +564,8 @@ public class RenderSectionManager {
 
     private void connectNeighborNodes(RenderSection render) {
         for (int direction = 0; direction < GraphDirection.COUNT; direction++) {
-            RenderSection adj = this.getRenderSection(render.getChunkX() + GraphDirection.x(direction),
-                    render.getChunkY() + GraphDirection.y(direction),
-                    render.getChunkZ() + GraphDirection.z(direction));
+            RenderSection adj = this.getRenderSection(
+                    render.getChunkX() + GraphDirection.x(direction), render.getChunkY() + GraphDirection.y(direction), render.getChunkZ() + GraphDirection.z(direction));
 
             if (adj != null) {
                 adj.setAdjacentNode(GraphDirection.opposite(direction), render);
@@ -540,16 +615,11 @@ public class RenderSectionManager {
         list.add(String.format("Geometry Pool: %d/%d MiB (%d buffers)", MathUtil.toMib(deviceUsed), MathUtil.toMib(deviceAllocated), count));
         list.add(String.format("Transfer Queue: %s", this.regions.getStagingBuffer().toString()));
 
-        list.add(String.format("Chunk Builder: Permits=%02d | Busy=%02d | Total=%02d",
-                this.builder.getScheduledJobCount(), this.builder.getBusyThreadCount(), this.builder.getTotalThreadCount())
-        );
+        list.add(String.format(
+                "Chunk Builder: Permits=%02d | Busy=%02d | Total=%02d", this.builder.getScheduledJobCount(), this.builder.getBusyThreadCount(), this.builder.getTotalThreadCount()));
 
-        list.add(String.format("Chunk Queues: U=%02d (P0=%03d | P1=%03d | P2=%03d)",
-                this.buildResults.size(),
-                this.rebuildLists.get(ChunkUpdateType.IMPORTANT_REBUILD).size(),
-                this.rebuildLists.get(ChunkUpdateType.REBUILD).size(),
-                this.rebuildLists.get(ChunkUpdateType.INITIAL_BUILD).size())
-        );
+        list.add(String.format(
+                "Chunk Queues: U=%02d (P0=%03d | P1=%03d | P2=%03d)", this.buildResults.size(), this.rebuildLists.get(ChunkUpdateType.IMPORTANT_REBUILD).size(), this.rebuildLists.get(ChunkUpdateType.REBUILD).size(), this.rebuildLists.get(ChunkUpdateType.INITIAL_BUILD).size()));
 
         return list;
     }

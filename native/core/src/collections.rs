@@ -95,9 +95,10 @@ impl<T> CVec<T> {
     }
 }
 
+// TODO: validate that the capacity is smaller than u32::MAX
 #[repr(C)]
 pub struct CInlineVec<T, const CAPACITY: usize> {
-    count: usize,
+    count: u32,
     data: [MaybeUninit<T>; CAPACITY],
 }
 
@@ -114,13 +115,13 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
 
     fn set_top_element(&mut self, value: T) {
         unsafe {
-            *self.data.get_mut(self.count).unwrap_unchecked() = MaybeUninit::new(value);
+            *self.data.get_mut(self.count as usize).unwrap_unchecked() = MaybeUninit::new(value);
         }
     }
 
     pub fn clear(&mut self) {
         unsafe {
-            for i in 0..self.count {
+            for i in 0..self.count as usize {
                 self.data.get_mut(i).unwrap_unchecked().assume_init_drop();
             }
         }
@@ -132,7 +133,7 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
         self.count == 0
     }
 
-    pub fn element_count(&self) -> usize {
+    pub fn element_count(&self) -> u32 {
         self.count
     }
 
@@ -142,7 +143,7 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
         self.count -= 1;
         unsafe {
             self.data
-                .get(self.count)
+                .get(self.count as usize)
                 .unwrap_unchecked()
                 .assume_init_read()
         }
@@ -152,7 +153,9 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
         // SAFETY: count shouldn't ever be able to be incremented past LEN, and the
         // contents should be initialized
         unsafe {
-            MaybeUninit::slice_assume_init_ref(self.data.get(0..self.count).unwrap_unchecked())
+            MaybeUninit::slice_assume_init_ref(
+                self.data.get(0..self.count as usize).unwrap_unchecked(),
+            )
         }
     }
 
@@ -161,7 +164,7 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
         // contents should be initialized
         unsafe {
             MaybeUninit::slice_assume_init_mut(
-                self.data.get_mut(0..(self.count)).unwrap_unchecked(),
+                self.data.get_mut(0..self.count as usize).unwrap_unchecked(),
             )
         }
     }

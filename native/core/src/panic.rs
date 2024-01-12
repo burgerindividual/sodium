@@ -29,3 +29,9 @@ fn signal_panic(info: &PanicInfo, handler: &PanicHandlerFn) -> ! {
 
     (*handler)(message.as_ptr(), message.len() as i32)
 }
+
+#[no_mangle]
+extern "C" fn rust_eh_personality() {
+    // the JVM will complain about this not existing, even though it should
+    // never be called
+}

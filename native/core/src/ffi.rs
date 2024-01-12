@@ -15,7 +15,6 @@ mod java {
     use alloc::boxed::Box;
 
     use crate::ffi::*;
-    use crate::graph::flags::SectionFlagSet;
     use crate::graph::local::LocalCoordContext;
     use crate::graph::visibility::VisibilityData;
     use crate::mem::LibcAllocVtable;
@@ -67,13 +66,11 @@ mod java {
         y: Jint,
         z: Jint,
         visibility_data: Jlong,
-        flags: Jbyte,
     ) {
         let graph = graph.into_mut_ref();
         graph.set_section(
             i32x3::from_xyz(x, y, z),
             VisibilityData::pack(visibility_data as u64),
-            SectionFlagSet::from(flags as u8),
         );
     }
 
@@ -96,11 +93,10 @@ mod java {
         _: *mut JClass,
         graph: JPtrMut<Graph>,
         frustum: JPtr<CFrustum>,
-        section_view_distance: Jshort,
-        fog_distance: Jfloat,
+        search_distance: Jfloat,
         world_bottom_section_y: Jbyte,
         world_top_section_y: Jbyte,
-        disable_occlusion_culling: Jboolean,
+        use_occlusion_culling: Jboolean,
     ) -> Jlong {
         let graph = graph.into_mut_ref();
         let frustum = frustum.as_ref();
@@ -116,13 +112,12 @@ mod java {
         let coord_context = LocalCoordContext::new(
             simd_frustum_planes,
             simd_camera_world_pos,
-            section_view_distance as u8,
-            fog_distance,
+            search_distance,
             world_bottom_section_y,
             world_top_section_y,
         );
 
-        graph.cull_and_sort(&coord_context, disable_occlusion_culling) as *const _ as usize as Jlong
+        graph.cull_and_sort(&coord_context, use_occlusion_culling) as *const _ as usize as Jlong
     }
 
     #[no_mangle]

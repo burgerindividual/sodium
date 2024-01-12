@@ -138,11 +138,11 @@ public class OcclusionCuller {
     private static int getOutwardDirections(ChunkSectionPos origin, RenderSection section) {
         int planes = 0;
 
-        planes |= section.getChunkX() <= origin.getX() ? 1 << GraphDirection.WEST  : 0;
-        planes |= section.getChunkX() >= origin.getX() ? 1 << GraphDirection.EAST  : 0;
+        planes |= section.getChunkX() <= origin.getX() ? 1 << GraphDirection.WEST : 0;
+        planes |= section.getChunkX() >= origin.getX() ? 1 << GraphDirection.EAST : 0;
 
-        planes |= section.getChunkY() <= origin.getY() ? 1 << GraphDirection.DOWN  : 0;
-        planes |= section.getChunkY() >= origin.getY() ? 1 << GraphDirection.UP    : 0;
+        planes |= section.getChunkY() <= origin.getY() ? 1 << GraphDirection.DOWN : 0;
+        planes |= section.getChunkY() >= origin.getY() ? 1 << GraphDirection.UP : 0;
 
         planes |= section.getChunkZ() <= origin.getZ() ? 1 << GraphDirection.NORTH : 0;
         planes |= section.getChunkZ() >= origin.getZ() ? 1 << GraphDirection.SOUTH : 0;
@@ -171,8 +171,12 @@ public class OcclusionCuller {
     private static int nearestToZero(int min, int max) {
         // this compiles to slightly better code than Math.min(Math.max(0, min), max)
         int clamped = 0;
-        if (min > 0) { clamped = min; }
-        if (max < 0) { clamped = max; }
+        if (min > 0) {
+            clamped = min;
+        }
+        if (max < 0) {
+            clamped = max;
+        }
         return clamped;
     }
 
@@ -197,12 +201,10 @@ public class OcclusionCuller {
 
         if (origin.getY() < this.world.getBottomSectionCoord()) {
             // below the world
-            this.initOutsideWorldHeight(queue, viewport, searchDistance, frame,
-                    this.world.getBottomSectionCoord(), GraphDirection.DOWN);
+            this.initOutsideWorldHeight(queue, viewport, searchDistance, frame, this.world.getBottomSectionCoord(), GraphDirection.DOWN);
         } else if (origin.getY() >= this.world.getTopSectionCoord()) {
             // above the world
-            this.initOutsideWorldHeight(queue, viewport, searchDistance, frame,
-                    this.world.getTopSectionCoord() - 1, GraphDirection.UP);
+            this.initOutsideWorldHeight(queue, viewport, searchDistance, frame, this.world.getTopSectionCoord() - 1, GraphDirection.UP);
         } else {
             this.initWithinWorld(visitor, queue, viewport, useOcclusionCulling, frame);
         }
@@ -238,13 +240,7 @@ public class OcclusionCuller {
     // Enqueues sections that are inside the viewport using diamond spiral iteration to avoid sorting and ensure a
     // consistent order. Innermost layers are enqueued first. Within each layer, iteration starts at the northernmost
     // section and proceeds counterclockwise (N->W->S->E).
-    private void initOutsideWorldHeight(WriteQueue<RenderSection> queue,
-                                        Viewport viewport,
-                                        float searchDistance,
-                                        int frame,
-                                        int height,
-                                        int direction)
-    {
+    private void initOutsideWorldHeight(WriteQueue<RenderSection> queue, Viewport viewport, float searchDistance, int frame, int height, int direction) {
         var origin = viewport.getChunkCoord();
         var radius = MathHelper.floor(searchDistance / 16.0f);
 

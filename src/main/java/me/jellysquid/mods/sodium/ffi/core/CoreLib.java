@@ -8,6 +8,7 @@ import org.lwjgl.system.Library;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 
+import me.jellysquid.mods.sodium.client.render.viewport.CameraTransform;
 import me.jellysquid.mods.sodium.ffi.core.callback.PanicCallback;
 
 import java.lang.invoke.MethodHandle;
@@ -16,15 +17,11 @@ import java.lang.invoke.MethodHandles;
 public class CoreLib {
     private static final PanicCallback CALLBACK = PanicCallback.defaultHandler();
 
-    public static long frustumCreate(FrustumIntersection frustum, Vector3d offset) {
-        long pFrustum = MemoryUtil.nmemAlloc(((6 * 4) * 4) + (3 * 8));
-        copyFrustumPoints(pFrustum, frustum);
-
+    public static long frustumCreate(MemoryStack stack, FrustumIntersection frustum, CameraTransform offset) {
+        // alignment and size obtained from rust
+        long pFrustum = stack.nmalloc(8, 120);
+        copyFrustumPoints(pFrustum, frustum, offset);
         return pFrustum;
-    }
-
-    public static void frustumDelete(long pFrustum) {
-        MemoryUtil.nmemFree(pFrustum);
     }
 
     private static final MethodHandle FRUSTUM_PLANES_HANDLE = getFrustumPlanesHandle();
@@ -39,7 +36,7 @@ public class CoreLib {
         }
     }
 
-    private static void copyFrustumPoints(long pFrustum, FrustumIntersection frustum) {
+    private static void copyFrustumPoints(long pFrustum, FrustumIntersection frustum, CameraTransform offset) {
         try {
             // should be faster than normal reflection
             var planes = (Vector4f[]) FRUSTUM_PLANES_HANDLE.invokeExact(frustum);
@@ -71,6 +68,10 @@ public class CoreLib {
             MemoryUtil.memPutFloat(pFrustum + 84, planes[3].w);
             MemoryUtil.memPutFloat(pFrustum + 88, planes[4].w);
             MemoryUtil.memPutFloat(pFrustum + 92, planes[5].w);
+
+            MemoryUtil.memPutDouble(pFrustum + 96, offset.x);
+            MemoryUtil.memPutDouble(pFrustum + 104, offset.y);
+            MemoryUtil.memPutDouble(pFrustum + 112, offset.z);
         } catch (Throwable t) {
             throw new RuntimeException("Failed to extract planes from frustum", t);
         }
@@ -113,12 +114,7 @@ public class CoreLib {
     public static native long graphCreate();
 
     public static native void graphSetSection(
-            long pGraph,
-            int x,
-            int y,
-            int z,
-            long visibilityData,
-            byte flags);
+            long pGraph, int x, int y, int z, long visibilityData);
 
     public static native void graphRemoveSection(long pGraph, int x, int y, int z);
 
@@ -130,11 +126,10 @@ public class CoreLib {
     public static native long graphSearch(
             long pGraph,
             long pFrustum,
-            short viewDistance,
-            float fogDistance,
+            float searchDistance,
             byte bottomSection,
             byte topSection,
-            boolean disableOcclusionCulling);
+            boolean useOcclusionCulling);
 
     /**
      * The pointer provided is invalid after calling this method.

@@ -1,15 +1,14 @@
 use alloc::alloc::alloc;
 use alloc::boxed::Box;
 use core::alloc::Layout;
-use core::mem::{swap, MaybeUninit};
-use core::ptr::{self, addr_of_mut};
+use core::mem::{swap, size_of};
+use core::ptr::addr_of_mut;
 
 use core_simd::simd::Which::*;
 use core_simd::simd::*;
 use local::LocalCoordContext;
 use sodium_proc_macros::InitDefaultInPlace;
 
-use self::flags::SectionFlagSet;
 use crate::collections::{ArrayDeque, CInlineVec};
 use crate::graph::local::index::LocalNodeIndex;
 use crate::graph::local::*;
@@ -63,12 +62,16 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     // add final, outer-most ring.
     count += max_width_traversal * 4;
 
-    // To future people:
-    // Initially, this number would be divided by two, assuming that the frustum
-    // would remove atleast half of the entries at a given time. However, I'm pretty
-    // sure the assumption doesn't quite hold. This is because we add sections to
-    // the queue before we actually check them, so if multiple sections attempt to
-    // add the same node, we only do one check on the node.
+    // The frustum can never be wider than 180 degrees, so we can cut the number in
+    // half... almost. We have to give a buffer of an extra 5% (arbitrarily
+    // selected) because of 2 reasons:
+    // 1. Frustum/fog culling is checked after the section has already been added to
+    //    the queue, not before.
+    // 2. The frustum includes sections that are just barely in view, adding more
+    //    than half in a worst-case scenario. This effect becomes more noticeable at
+    //    smaller render distances.
+    count = (count * 100) / 55;
+
     count
 }
 
@@ -99,8 +102,7 @@ impl FrustumFogCachedState {
 #[derive(InitDefaultInPlace)]
 pub struct Graph {
     section_visibility_direction_sets: [VisibilityData; SECTIONS_IN_GRAPH],
-    section_flag_sets: [SectionFlagSet; SECTIONS_IN_GRAPH],
-
+    // section_flag_sets: [SectionFlagSet; SECTIONS_IN_GRAPH],
     frustum_fog_cached_state: FrustumFogCachedState,
     bfs_cached_state: BfsCachedState,
 
@@ -121,12 +123,12 @@ impl Graph {
     pub fn cull_and_sort(
         &mut self,
         coord_context: &LocalCoordContext,
-        disable_occlusion_culling: bool,
+        use_occlusion_culling: bool,
     ) -> &SortedRegionRenderLists {
         self.results.clear();
 
         self.frustum_and_fog_cull(coord_context);
-        self.bfs_and_occlusion_cull(coord_context, disable_occlusion_culling);
+        self.bfs_and_occlusion_cull(coord_context, use_occlusion_culling);
 
         self.bfs_cached_state
             .staging_render_lists
@@ -199,12 +201,12 @@ impl Graph {
     fn bfs_and_occlusion_cull(
         &mut self,
         coord_context: &LocalCoordContext,
-        disable_occlusion_culling: bool,
+        use_occlusion_culling: bool,
     ) {
-        let directions_modifier = if disable_occlusion_culling {
-            GraphDirectionSet::ALL
-        } else {
+        let directions_modifier = if use_occlusion_culling {
             GraphDirectionSet::NONE
+        } else {
+            GraphDirectionSet::ALL
         };
 
         // Initially the read queue
@@ -251,8 +253,9 @@ impl Graph {
                     continue;
                 }
 
-                let section_flags = *node_index.index_array_unchecked(&self.section_flag_sets);
-                region_render_list.add_section(section_flags, node_pos);
+                // let section_flags =
+                // *node_index.index_array_unchecked(&self.section_flag_sets);
+                region_render_list.add_section(node_pos);
 
                 // use incoming directions to determine outgoing directions, given the
                 // visibility bits set
@@ -294,21 +297,16 @@ impl Graph {
         }
     }
 
-    pub fn set_section(
-        &mut self,
-        section_coord: i32x3,
-        visibility_data: VisibilityData,
-        flags: SectionFlagSet,
-    ) {
+    pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {
         let local_coord = section_coord.cast::<u8>();
         let index = LocalNodeIndex::<0>::pack(local_coord);
 
-        *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;
+        // *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;
         *index.index_array_unchecked_mut(&mut self.section_visibility_direction_sets) =
             visibility_data;
     }
 
     pub fn remove_section(&mut self, section_coord: i32x3) {
-        self.set_section(section_coord, Default::default(), Default::default());
+        self.set_section(section_coord, Default::default());
     }
 }

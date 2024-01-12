@@ -128,23 +128,39 @@ pub trait InitDefaultInPlace {
     fn init_default_in_place(self);
 }
 
-// Fallback impl when a manual impl isn't specified
-impl<T: Default> InitDefaultInPlace for &*mut T {
+// Typical impl for arrays where T implements InitDefaultInPlace manually
+impl<T, const LEN: usize> InitDefaultInPlace for *mut [T; LEN]
+where
+    *mut T: InitDefaultInPlace,
+{
     fn init_default_in_place(self) {
         unsafe {
-            self.write(T::default());
+            let element_ptr = self as *mut T;
+            for idx in 0..LEN {
+                element_ptr.add(idx).init_default_in_place();
+            }
         }
     }
 }
 
-impl<T: Default, const LEN: usize> InitDefaultInPlace for *mut [T; LEN] {
+// Fallback impl when a manual impl isn't specified and the type *is* an array
+impl<T: Default, const LEN: usize> InitDefaultInPlace for &*mut [T; LEN] {
     fn init_default_in_place(self) {
         unsafe {
-            let elements_ptr = self as *mut T;
+            let element_ptr = (*self) as *mut T;
             for idx in 0..LEN {
-                // TODO: does this need to be unaligned?
-                elements_ptr.add(idx).write(T::default());
+                element_ptr.add(idx).write(T::default());
             }
+        }
+    }
+}
+
+// Fallback impl when a manual impl isn't specified and the type isn't an array
+impl<T: Default> InitDefaultInPlace for &&*mut T {
+    fn init_default_in_place(self) {
+        unsafe {
+            // todo: can this ever be unaligned if it's always writing to field entries?
+            self.write(T::default());
         }
     }
 }

@@ -151,7 +151,8 @@ public class RenderSectionManager {
 
         // Any variable prefixed with a "u" must be treated as unsigned
         int uRegionCount = MemoryUtil.memGetInt(pSearchResults);
-        pSearchResults += Integer.SIZE;
+        // next aligned field is 16 bytes away
+        pSearchResults += 16;
 
         for (int regionIdx = 0; Integer.compareUnsigned(regionIdx, uRegionCount) < 0; regionIdx++) {
             // each RegionRenderList is 288 bytes
@@ -171,8 +172,8 @@ public class RenderSectionManager {
 
             int uSectionCount = MemoryUtil.memGetInt(pSearchResults + regionPtrOffset);
             for (int sectionIdx = 0; Integer.compareUnsigned(sectionIdx, uSectionCount) < 0; sectionIdx++) {
-                // each RegionSectionIndex is 1 byte
-                long sectionPtrIdx = sectionIdx;
+                // each RegionSectionIndex is 1 byte, the 4 bytes is to account for the section count
+                long sectionPtrIdx = sectionIdx + 4;
 
                 // TODO: do these in batches of 8 with getLong
                 byte packedSectionCoord = MemoryUtil.memGetByte(pSearchResults + regionPtrOffset + sectionPtrIdx);
@@ -184,12 +185,15 @@ public class RenderSectionManager {
                 long sectionKey = ChunkSectionPos.asLong(sectionX, sectionY, sectionZ);
                 RenderSection section = this.sectionByPosition.get(sectionKey);
 
-                visitor.accept(section);
+                if (section != null) {
+                    visitor.accept(section);
+                }
             }
 
         }
 
         this.renderLists = visitor.createRenderLists();
+        // TODO: figure out a better way to do rebuild lists? does this shit even work?
         this.rebuildLists = visitor.getRebuildLists();
     }
 

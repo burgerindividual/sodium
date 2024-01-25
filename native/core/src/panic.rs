@@ -12,7 +12,6 @@ pub fn set_panic_handler(panic_handler_fn_ptr: PanicHandlerFn) {
     }
 }
 
-// rust analyzer cries if this isn't here
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {

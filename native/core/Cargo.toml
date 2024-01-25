@@ -11,6 +11,9 @@ opt-level = 0
 panic = "abort"
 lto = "thin"
 
+[profile.test]
+inherits = "dev"
+
 [profile.release]
 panic = "abort"
 debug = true
@@ -33,3 +36,9 @@ core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features =
 ] }
 std_float = { git = "https://github.com/rust-lang/portable-simd.git" }
 sodium_proc_macros = { path = "../proc_macros" }
+derive_more = { version = "1.0.0-beta.6", default_features = false, features = [
+    "add",
+    "add_assign",
+    "mul",
+    "mul_assign",
+] }

@@ -53,7 +53,7 @@ where
     }
 
     fn into_tuple(self) -> (T, T, T) {
-        (self.x(), self.y(), self.z())
+        self.to_array().into()
     }
 
     fn x(&self) -> T {
@@ -124,6 +124,34 @@ where
         } else {
             self * a + b
         }
+    }
+}
+
+pub trait RemEuclid {
+    fn rem_euclid(self, rhs: Self) -> Self;
+}
+
+impl<const LANES: usize> RemEuclid for Simd<f64, LANES>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
+    fn rem_euclid(self, rhs: Self) -> Self {
+        let r = self % rhs;
+        r + r
+            .simd_lt(Simd::splat(0.0))
+            .select(rhs.abs(), Simd::splat(0.0))
+    }
+}
+
+impl<const LANES: usize> RemEuclid for Simd<f32, LANES>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
+    fn rem_euclid(self, rhs: Self) -> Self {
+        let r = self % rhs;
+        r + r
+            .simd_lt(Simd::splat(0.0))
+            .select(rhs.abs(), Simd::splat(0.0))
     }
 }
 

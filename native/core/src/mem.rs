@@ -1,9 +1,11 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
+#[cfg(not(test))]
 #[global_allocator]
 static mut GLOBAL_ALLOC: GlobalLibcAllocator = GlobalLibcAllocator::uninit();
 
+#[cfg(not(test))]
 pub fn set_allocator(vtable: &LibcAllocVtable) -> bool {
     unsafe {
         GLOBAL_ALLOC = GlobalLibcAllocator::new(*vtable);
@@ -15,6 +17,12 @@ pub fn set_allocator(vtable: &LibcAllocVtable) -> bool {
 
         error
     }
+}
+
+#[cfg(test)]
+pub fn set_allocator(_: &LibcAllocVtable) -> bool {
+    // should not be called when testing
+    true
 }
 
 #[repr(C)]

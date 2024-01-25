@@ -25,7 +25,11 @@ public class VisibilityEncoding {
      * @return a 36-bit representation of the occlusion data
      */
     public static long extract(@NotNull ChunkOcclusionData occlusionData) {
-        return occlusionData.visibility.toLongArray()[0];
+        if (occlusionData.visibility.length() > 0) {
+            return occlusionData.visibility.toLongArray()[0];
+        } else {
+            return 0;
+        }
     }
 
     @Deprecated

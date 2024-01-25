@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![feature(portable_simd)]
 #![feature(cell_leak)]
 #![feature(maybe_uninit_slice)]
@@ -17,3 +17,4 @@ mod math;
 mod mem;
 mod panic;
 mod region;
+mod tests;

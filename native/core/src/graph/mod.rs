@@ -9,8 +9,9 @@ use core_simd::simd::*;
 use local::LocalCoordContext;
 use sodium_proc_macros::InitDefaultInPlace;
 
+use self::coord::LocalNodeCoords;
 use crate::collections::{ArrayDeque, CInlineVec};
-use crate::graph::local::index::LocalNodeIndex;
+use crate::graph::local::coord::LocalNodeIndex;
 use crate::graph::local::*;
 use crate::graph::octree::LinearBitOctree;
 use crate::graph::visibility::*;
@@ -78,12 +79,17 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
 pub struct BfsCachedState {
     incoming_directions: [GraphDirectionSet; SECTIONS_IN_GRAPH],
     staging_render_lists: StagingRegionRenderLists,
+    queue_1: BfsQueue,
+    queue_2: BfsQueue,
 }
 
 impl BfsCachedState {
     pub fn reset(&mut self) {
         self.incoming_directions.fill(GraphDirectionSet::NONE);
         self.staging_render_lists.clear();
+        // TODO: are these necessary?
+        self.queue_1.reset();
+        self.queue_2.reset();
     }
 }
 
@@ -142,20 +148,21 @@ impl Graph {
     }
 
     fn frustum_and_fog_cull(&mut self, coord_context: &LocalCoordContext) {
-        let mut level_3_index = coord_context.iter_start_index;
-
         // this could go more linearly in memory, but we probably have good enough
         // locality inside the level 3 nodes
-        for _x in 0..coord_context.level_3_node_iters.x() {
-            for _y in 0..coord_context.level_3_node_iters.y() {
-                for _z in 0..coord_context.level_3_node_iters.z() {
-                    self.check_node(level_3_index, coord_context);
+        let mut level_3_index_x_incr = coord_context.iter_start_index;
+        for _x_offset in 0..coord_context.level_3_node_iter_counts.x() {
+            let mut level_3_index_xy_incr = level_3_index_x_incr;
+            for _y_offset in 0..coord_context.level_3_node_iter_counts.y() {
+                let mut level_3_index_xyz_incr = level_3_index_xy_incr;
+                for _z_offset in 0..coord_context.level_3_node_iter_counts.z() {
+                    self.check_node(level_3_index_xyz_incr, coord_context);
 
-                    level_3_index = level_3_index.inc_z();
+                    level_3_index_xyz_incr = level_3_index_xyz_incr.inc_z();
                 }
-                level_3_index = level_3_index.inc_y();
+                level_3_index_xy_incr = level_3_index_xy_incr.inc_y();
             }
-            level_3_index = level_3_index.inc_x();
+            level_3_index_x_incr = level_3_index_x_incr.inc_x();
         }
     }
 
@@ -208,13 +215,8 @@ impl Graph {
             GraphDirectionSet::ALL
         };
 
-        // Initially the read queue
-        let mut queue_1 = BfsQueue::default();
-        let mut read_queue_ref = &mut queue_1;
-
-        // Initially the write queue
-        let mut queue_2 = BfsQueue::default();
-        let mut write_queue_ref = &mut queue_2;
+        let mut read_queue_ref = &mut self.bfs_cached_state.queue_1;
+        let mut write_queue_ref = &mut self.bfs_cached_state.queue_2;
 
         // Manually add the secton the camera is in as the section to search from
         let initial_node_index = coord_context.camera_section_index;
@@ -297,7 +299,7 @@ impl Graph {
     }
 
     pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {
-        let local_coord = section_coord.cast::<u8>();
+        let local_coord = LocalNodeCoords::from_raw(section_coord.cast::<u8>());
         let index = LocalNodeIndex::<0>::pack(local_coord);
 
         // *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;

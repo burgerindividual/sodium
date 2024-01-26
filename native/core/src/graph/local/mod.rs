@@ -59,8 +59,9 @@ impl LocalCoordContext {
             (world_bottom_section_y as u8).wrapping_add(Self::Y_ADD_SECTIONS);
         let world_top_section_y = (world_top_section_y as u8).wrapping_add(Self::Y_ADD_SECTIONS);
 
-        let mut frustum = LocalFrustum::new(frustum_planes);
-        frustum.plane_ys += Simd::splat(Self::Y_ADD_BLOCKS as f32);
+        let frustum = LocalFrustum::new(frustum_planes);
+        // TODO: this seems to be wrong, but then why is y rendering still relative to camera pos?
+        // frustum.plane_ys += Simd::splat(Self::Y_ADD_BLOCKS as f32);
 
         let camera_coords = (camera_global_coords + f64x3::from_xyz(0.0, Self::Y_ADD_BLOCKS, 0.0))
             .rem_euclid(f64x3::splat(4096.0))
@@ -77,6 +78,7 @@ impl LocalCoordContext {
         );
         let camera_section_index = LocalNodeIndex::pack(camera_section_coords);
 
+        // this includes the height shift back down by 32 regions
         let origin_global_region_offset = (camera_global_section_coords
             - camera_section_coords.into_raw().cast::<i32>())
             >> REGION_COORD_SHIFT.cast::<i32>();
@@ -241,6 +243,7 @@ impl LocalCoordContext {
             + raw_section_pos
                 .simd_lt(self.iter_start_section_coords.into_raw())
                 .cast()
+                // psure this just aint right lol
                 .select(self.iter_overflow_offset, self.iter_underflow_offset)
             - self.camera_coords;
 

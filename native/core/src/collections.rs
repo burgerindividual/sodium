@@ -3,6 +3,7 @@ use core::mem::MaybeUninit;
 use core::ptr::{self, addr_of_mut};
 
 use crate::mem::InitDefaultInPlace;
+use crate::unwrap_debug;
 
 pub struct ArrayDeque<T, const CAPACITY: usize> {
     head: usize,
@@ -25,7 +26,7 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
 
     fn set_tail_element(&mut self, value: T) {
         unsafe {
-            *self.elements.get_mut(self.tail).unwrap_unchecked() = MaybeUninit::new(value);
+            *unwrap_debug!(self.elements.get_mut(self.tail)) = MaybeUninit::new(value);
         }
     }
 
@@ -37,9 +38,8 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
         // the unchecked unwrap should be fine, because if we read past the array, it
         // would've already been a problem when we pushed an element past the
         // array.
-        let value = unsafe {
-            MaybeUninit::assume_init_ref(self.elements.get(self.head).unwrap_unchecked())
-        };
+        let value =
+            unsafe { MaybeUninit::assume_init_ref(unwrap_debug!(self.elements.get(self.head))) };
         self.head += 1;
 
         Some(value)
@@ -115,14 +115,14 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
 
     fn set_top_element(&mut self, value: T) {
         unsafe {
-            *self.data.get_mut(self.count as usize).unwrap_unchecked() = MaybeUninit::new(value);
+            *unwrap_debug!(self.data.get_mut(self.count as usize)) = MaybeUninit::new(value);
         }
     }
 
     pub fn clear(&mut self) {
         unsafe {
             for i in 0..self.count as usize {
-                self.data.get_mut(i).unwrap_unchecked().assume_init_drop();
+                unwrap_debug!(self.data.get_mut(i)).assume_init_drop();
             }
         }
 
@@ -141,21 +141,14 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
     /// The vec must not be empty before calling this function.
     pub fn pop(&mut self) -> T {
         self.count -= 1;
-        unsafe {
-            self.data
-                .get(self.count as usize)
-                .unwrap_unchecked()
-                .assume_init_read()
-        }
+        unsafe { unwrap_debug!(self.data.get(self.count as usize)).assume_init_read() }
     }
 
     pub fn get_slice(&self) -> &[T] {
         // SAFETY: count shouldn't ever be able to be incremented past LEN, and the
         // contents should be initialized
         unsafe {
-            MaybeUninit::slice_assume_init_ref(
-                self.data.get(0..self.count as usize).unwrap_unchecked(),
-            )
+            MaybeUninit::slice_assume_init_ref(unwrap_debug!(self.data.get(0..self.count as usize)))
         }
     }
 
@@ -163,9 +156,9 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
         // SAFETY: count shouldn't ever be able to be incremented past LEN, and the
         // contents should be initialized
         unsafe {
-            MaybeUninit::slice_assume_init_mut(
-                self.data.get_mut(0..self.count as usize).unwrap_unchecked(),
-            )
+            MaybeUninit::slice_assume_init_mut(unwrap_debug!(self
+                .data
+                .get_mut(0..self.count as usize)))
         }
     }
 }

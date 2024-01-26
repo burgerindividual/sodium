@@ -70,7 +70,7 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     //    before.
     // 2. The frustum includes sections that are just barely in view, adding more than half in a
     //    worst-case scenario. This effect becomes more noticeable at smaller render distances.
-    count = (count * 100) / 55;
+    // count = (count * 100) / 55;
 
     count
 }
@@ -233,22 +233,22 @@ impl Graph {
         while !finished {
             finished = true;
 
-            while let Some(&node_index) = read_queue_ref.pop() {
+            while let Some(&local_section_index) = read_queue_ref.pop() {
                 finished = false;
 
-                let node_pos = node_index.unpack();
+                let local_section_coords = local_section_index.unpack();
 
                 // we need to touch the region before checking if the node is visible, because
                 // skipping sections can cause the region order to become incorrect
                 let region_render_list = self
                     .bfs_cached_state
                     .staging_render_lists
-                    .touch_region(coord_context, node_pos);
+                    .touch_region(coord_context, local_section_coords);
 
                 if !self
                     .frustum_fog_cached_state
                     .section_is_visible_bits
-                    .get(node_index)
+                    .get(local_section_index)
                 {
                     // skip node
                     continue;
@@ -256,25 +256,26 @@ impl Graph {
 
                 // let section_flags =
                 // *node_index.index_array_unchecked(&self.section_flag_sets);
-                region_render_list.add_section(node_pos);
+                region_render_list.add_section(local_section_coords);
 
                 // use incoming directions to determine outgoing directions, given the
                 // visibility bits set
-                let node_incoming_directions =
-                    *node_index.index_array_unchecked(&self.bfs_cached_state.incoming_directions);
+                let section_incoming_directions = *local_section_index
+                    .index_array_unchecked(&self.bfs_cached_state.incoming_directions);
 
-                let mut node_outgoing_directions = node_index
+                let mut section_outgoing_directions = local_section_index
                     .index_array_unchecked(&self.section_visibility_direction_sets)
-                    .get_outgoing_directions(node_incoming_directions);
-                node_outgoing_directions.add_all(directions_modifier);
-                node_outgoing_directions &= coord_context.get_valid_directions(node_pos);
+                    .get_outgoing_directions(section_incoming_directions);
+                section_outgoing_directions.add_all(directions_modifier);
+                section_outgoing_directions &=
+                    coord_context.get_valid_directions(local_section_coords);
 
                 // use the outgoing directions to get the neighbors that could possibly be
                 // enqueued
-                let node_neighbor_indices = node_index.get_all_neighbors();
+                let section_neighbor_indices = local_section_index.get_all_neighbors();
 
-                for direction in node_outgoing_directions {
-                    let neighbor_index = node_neighbor_indices.get(direction);
+                for direction in section_outgoing_directions {
+                    let neighbor_index = section_neighbor_indices.get(direction);
 
                     // the outgoing direction for the current node is the incoming direction for the
                     // neighbor
@@ -292,8 +293,9 @@ impl Graph {
                 }
             }
 
-            // no need to reset the read queue as we've already popped all the elements from
-            // it.
+            // we need to reset the read queue because, even though there are no elements left, we
+            // want to set the head and tail pointers to the start of the array.
+            read_queue_ref.reset();
             swap(&mut read_queue_ref, &mut write_queue_ref);
         }
     }

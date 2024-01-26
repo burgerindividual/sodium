@@ -2,7 +2,7 @@ use core::mem::size_of;
 
 use core_simd::simd::*;
 
-use crate::graph::*;
+use crate::{graph::*, unwrap_debug};
 
 // operations on u8x64 are faster in some cases compared to u64x8
 pub type Level3Node = Simd<u8, 64>;
@@ -37,24 +37,24 @@ impl LinearBitOctree {
                 let level_1_index = array_index >> 3;
                 let bit_index = array_index & 0b111;
 
-                let level_1_node = unsafe { *self.level_1.get(level_1_index).unwrap_unchecked() };
+                let level_1_node = unsafe { *unwrap_debug!(self.level_1.get(level_1_index)) };
 
                 let bit = (level_1_node >> bit_index) & 0b1;
 
                 bit == 0b1
             }
             1 => {
-                let level_1_node = unsafe { *self.level_1.get(array_index).unwrap_unchecked() };
+                let level_1_node = unsafe { *unwrap_debug!(self.level_1.get(array_index)) };
 
                 level_1_node == u8::MAX
             }
             2 => {
-                let level_2_node = unsafe { *self.level_2.get(array_index).unwrap_unchecked() };
+                let level_2_node = unsafe { *unwrap_debug!(self.level_2.get(array_index)) };
 
                 level_2_node == u64::MAX
             }
             3 => {
-                let level_3_node = unsafe { *self.level_3.get(array_index).unwrap_unchecked() };
+                let level_3_node = unsafe { *unwrap_debug!(self.level_3.get(array_index)) };
 
                 level_3_node == u8x64::splat(u8::MAX)
             }
@@ -71,8 +71,7 @@ impl LinearBitOctree {
                 let level_1_index = array_index >> 3;
                 let bit_index = array_index & 0b111;
 
-                let level_1_node =
-                    unsafe { self.level_1.get_mut(level_1_index).unwrap_unchecked() };
+                let level_1_node = unsafe { unwrap_debug!(self.level_1.get_mut(level_1_index)) };
 
                 let bit = 0b1 << bit_index;
 
@@ -83,17 +82,17 @@ impl LinearBitOctree {
                 }
             }
             1 => {
-                let level_1_node = unsafe { self.level_1.get_mut(array_index).unwrap_unchecked() };
+                let level_1_node = unsafe { unwrap_debug!(self.level_1.get_mut(array_index)) };
 
                 *level_1_node = if value { u8::MAX } else { 0_u8 };
             }
             2 => {
-                let level_2_node = unsafe { self.level_2.get_mut(array_index).unwrap_unchecked() };
+                let level_2_node = unsafe { unwrap_debug!(self.level_2.get_mut(array_index)) };
 
                 *level_2_node = if value { u64::MAX } else { 0_u64 };
             }
             3 => {
-                let level_3_node = unsafe { self.level_3.get_mut(array_index).unwrap_unchecked() };
+                let level_3_node = unsafe { unwrap_debug!(self.level_3.get_mut(array_index)) };
 
                 *level_3_node = u8x64::splat(if value { u8::MAX } else { 0_u8 });
             }
@@ -109,10 +108,9 @@ impl LinearBitOctree {
                 let level_1_index = array_index >> 3;
                 let bit_index = array_index & 0b111;
 
-                let level_1_node_src =
-                    unsafe { *src.level_1.get(level_1_index).unwrap_unchecked() };
+                let level_1_node_src = unsafe { *unwrap_debug!(src.level_1.get(level_1_index)) };
                 let level_1_node_dst =
-                    unsafe { self.level_1.get_mut(level_1_index).unwrap_unchecked() };
+                    unsafe { unwrap_debug!(self.level_1.get_mut(level_1_index)) };
 
                 let bit_mask = 0b1 << bit_index;
                 let src_bit = level_1_node_src & bit_mask;
@@ -121,23 +119,20 @@ impl LinearBitOctree {
                 *level_1_node_dst |= src_bit;
             }
             1 => {
-                let level_1_node_src = unsafe { *src.level_1.get(array_index).unwrap_unchecked() };
-                let level_1_node_dst =
-                    unsafe { self.level_1.get_mut(array_index).unwrap_unchecked() };
+                let level_1_node_src = unsafe { *unwrap_debug!(src.level_1.get(array_index)) };
+                let level_1_node_dst = unsafe { unwrap_debug!(self.level_1.get_mut(array_index)) };
 
                 *level_1_node_dst = level_1_node_src;
             }
             2 => {
-                let level_2_node_src = unsafe { *src.level_2.get(array_index).unwrap_unchecked() };
-                let level_2_node_dst =
-                    unsafe { self.level_2.get_mut(array_index).unwrap_unchecked() };
+                let level_2_node_src = unsafe { *unwrap_debug!(src.level_2.get(array_index)) };
+                let level_2_node_dst = unsafe { unwrap_debug!(self.level_2.get_mut(array_index)) };
 
                 *level_2_node_dst = level_2_node_src;
             }
             3 => {
-                let level_3_node_src = unsafe { *src.level_3.get(array_index).unwrap_unchecked() };
-                let level_3_node_dst =
-                    unsafe { self.level_3.get_mut(array_index).unwrap_unchecked() };
+                let level_3_node_src = unsafe { *unwrap_debug!(src.level_3.get(array_index)) };
+                let level_3_node_dst = unsafe { unwrap_debug!(self.level_3.get_mut(array_index)) };
 
                 *level_3_node_dst = level_3_node_src;
             }
@@ -156,7 +151,7 @@ impl LinearBitOctree {
     //     unsafe {
     //         let pointer = unsafe {
     //             self.level_3
-    //                 .get(index.as_array_offset().unwrap_unchecked() >>
+    //                 .get(index.as_array_offset().unwrap_debug() >>
     // LEVEL_3_INDEX_SHIFT)         };
     //
     //         prefetch_read_data(pointer, Self::INTRINSIC_LOCALITY_LEVEL);
@@ -167,7 +162,7 @@ impl LinearBitOctree {
     //     unsafe {
     //         let pointer = unsafe {
     //             self.level_3
-    //                 .get(index.as_array_offset().unwrap_unchecked() >>
+    //                 .get(index.as_array_offset().unwrap_debug() >>
     // LEVEL_3_INDEX_SHIFT)         };
     //
     //         prefetch_write_data(pointer, Self::INTRINSIC_LOCALITY_LEVEL);

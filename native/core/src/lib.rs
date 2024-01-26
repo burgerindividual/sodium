@@ -15,6 +15,7 @@ mod graph;
 mod jni;
 mod math;
 mod mem;
+#[macro_use]
 mod panic;
 mod region;
 mod tests;

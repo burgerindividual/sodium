@@ -31,6 +31,18 @@ fn signal_panic(info: &PanicInfo, handler: &PanicHandlerFn) -> ! {
 
 #[no_mangle]
 extern "C" fn rust_eh_personality() {
-    // the JVM will complain about this not existing, even though it should
-    // never be called
+    // the JVM will complain about this not existing in debug builds, even though it should
+    // never be called. the calls are likely not optimized out, even though they aren't hit, so we
+    // just make the dynamic linker happy.
+}
+
+#[macro_export]
+macro_rules! unwrap_debug {
+    ($var:expr) => {
+        if cfg!(debug_assertions) {
+            $var.unwrap()
+        } else {
+            $var.unwrap_unchecked()
+        }
+    };
 }

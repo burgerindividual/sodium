@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 opt-level = 0
 panic = "abort"
 lto = "thin"
+debug-assertions = true
 
 [profile.test]
 inherits = "dev"

@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use crate::graph::local::coord::{LocalNodeCoords, LocalNodeIndex};
+use crate::graph::visibility::GraphDirection;
 use crate::math::Coords3;
 use crate::region::LocalRegionIndex;
 
@@ -42,15 +43,15 @@ fn inc_dec_local_node_index() {
 }
 
 #[test]
-fn iterate_lower_local_note_index() {
+fn iterate_lower_local_node_index() {
     let local_index_3 = LocalNodeIndex::<3>::pack(LocalNodeCoords::from_xyz(0, 0, 0));
     let mut set = HashSet::new();
 
     for lower_index_2 in local_index_3.iter_lower_nodes::<2>() {
-        let lower_coords_2 = lower_index_2.unpack();
+        let _lower_coords_2 = lower_index_2.unpack();
         // println!("2: {:?}", lower_coords_2);
         for lower_index_1 in lower_index_2.iter_lower_nodes::<1>() {
-            let lower_coords_1 = lower_index_1.unpack();
+            let _lower_coords_1 = lower_index_1.unpack();
             // println!("1: {:?}", lower_coords_1);
             for lower_index_0 in lower_index_1.iter_lower_nodes::<0>() {
                 let lower_coords_0 = lower_index_0.unpack();
@@ -69,4 +70,18 @@ fn iterate_lower_local_note_index() {
 fn local_region_index() {
     let idx = LocalRegionIndex::from_local_section(LocalNodeCoords::<0>::from_xyz(22, 4, 6));
     println!("{:?}", idx);
+}
+
+#[test]
+fn local_section_get_neighbors() {
+    let idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(22, 4, 6));
+
+    let neighbors = idx.get_all_neighbors();
+
+    assert_eq!(neighbors.get(GraphDirection::NegX), idx.dec_x());
+    assert_eq!(neighbors.get(GraphDirection::NegY), idx.dec_y());
+    assert_eq!(neighbors.get(GraphDirection::NegZ), idx.dec_z());
+    assert_eq!(neighbors.get(GraphDirection::PosX), idx.inc_x());
+    assert_eq!(neighbors.get(GraphDirection::PosY), idx.inc_y());
+    assert_eq!(neighbors.get(GraphDirection::PosZ), idx.inc_z());
 }

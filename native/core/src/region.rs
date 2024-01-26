@@ -60,16 +60,13 @@ impl RegionSectionIndex {
 
     pub fn from_local_section(local_section_coord: LocalNodeCoords<0>) -> Self {
         Self(
-            (local_section_coord.into_raw()
+            ((local_section_coord.into_raw()
                 & u8x3::from_array([
                     Self::X_MASK_SINGLE,
                     Self::Y_MASK_SINGLE,
                     Self::Z_MASK_SINGLE,
-                ]) << u8x3::from_array([
-                    Self::X_MASK_SHIFT,
-                    Self::Y_MASK_SHIFT,
-                    Self::Z_MASK_SHIFT,
                 ]))
+                << u8x3::from_array([Self::X_MASK_SHIFT, Self::Y_MASK_SHIFT, Self::Z_MASK_SHIFT]))
             .reduce_or(),
         )
     }
@@ -163,9 +160,9 @@ impl StagingRegionRenderLists {
     ) -> &mut RegionRenderList {
         let local_region_index = LocalRegionIndex::from_local_section(local_section_coord);
         let region_render_list = unsafe {
-            self.region_render_lists
-                .get_mut(local_region_index.0 as usize)
-                .unwrap_unchecked()
+            unwrap_debug!(self
+                .region_render_lists
+                .get_mut(local_region_index.0 as usize))
         };
 
         let global_region_coords = coord_context.origin_global_region_offset
@@ -186,9 +183,7 @@ impl StagingRegionRenderLists {
     pub fn compile_render_lists(&self, results: &mut SortedRegionRenderLists) {
         for local_region_index in self.ordered_region_indices.get_slice() {
             let render_region_list = unsafe {
-                self.region_render_lists
-                    .get(local_region_index.0 as usize)
-                    .unwrap_unchecked()
+                unwrap_debug!(self.region_render_lists.get(local_region_index.0 as usize))
             };
 
             // if a region has no sections, skip it. this is a product of making sure the

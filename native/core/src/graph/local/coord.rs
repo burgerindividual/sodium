@@ -4,6 +4,7 @@ use derive_more::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign
 use super::Coords3;
 use crate::graph::{GraphDirection, SECTIONS_IN_GRAPH};
 use crate::math::{u8x3, ToBitMaskExtended};
+use crate::unwrap_debug;
 
 #[derive(
     Clone,
@@ -67,7 +68,7 @@ impl<const LEVEL: u8> Coords3<u8> for LocalNodeCoords<LEVEL> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(transparent)]
 pub struct LocalNodeIndex<const LEVEL: u8>(pub u32);
 
@@ -312,7 +313,7 @@ impl LocalNodeIndex<0> {
         // SAFETY: Using unsafe gets are okay because the internal representation will
         // never have the top 8 bits set, and the arrays are exactly the length
         // of what we can represent with 24 bits.
-        unsafe { array.get(self.as_array_index_scaled()).unwrap_unchecked() }
+        unsafe { unwrap_debug!(array.get(self.as_array_index_scaled())) }
     }
 
     pub fn index_array_unchecked_mut<'array, T>(
@@ -320,11 +321,7 @@ impl LocalNodeIndex<0> {
         array: &'array mut [T; SECTIONS_IN_GRAPH],
     ) -> &'array mut T {
         // SAFETY: see documentation in index_array_unchecked
-        unsafe {
-            array
-                .get_mut(self.as_array_index_scaled())
-                .unwrap_unchecked()
-        }
+        unsafe { unwrap_debug!(array.get_mut(self.as_array_index_scaled())) }
     }
 }
 

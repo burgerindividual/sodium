@@ -179,7 +179,7 @@ impl LocalCoordContext {
     // this only cares about the x and z axis
     fn bounds_inside_fog<const LEVEL: u8>(
         &self,
-        local_bounds: &LocalBoundingBox,
+        local_bounds: &FrustumBoundingBox,
     ) -> BoundsCheckResult {
         // find closest to (0,0) because the bounding box coordinates are relative to
         // the camera
@@ -235,7 +235,7 @@ impl LocalCoordContext {
     fn node_get_local_bounds<const LEVEL: u8>(
         &self,
         local_node_coords: LocalNodeCoords<LEVEL>,
-    ) -> LocalBoundingBox {
+    ) -> FrustumBoundingBox {
         let raw_section_pos = local_node_coords.into_level::<0>().into_raw();
         let converted_pos = raw_section_pos.cast::<f32>() * Simd::splat(16.0);
 
@@ -243,13 +243,14 @@ impl LocalCoordContext {
             + raw_section_pos
                 .simd_lt(self.iter_start_section_coords.into_raw())
                 .cast()
-                // psure this just aint right lol
+                // TODO: psure this just aint right lol
                 .select(self.iter_overflow_offset, self.iter_underflow_offset)
+            // TODO: should the y coordinate of the camera be not considered here?
             - self.camera_coords;
 
         let max_pos = min_pos + Simd::splat((LocalNodeCoords::<LEVEL>::length() * 16) as f32);
 
-        LocalBoundingBox {
+        FrustumBoundingBox {
             min: min_pos,
             max: max_pos,
         }
@@ -289,7 +290,7 @@ impl LocalFrustum {
         }
     }
 
-    pub fn test_local_bounding_box(&self, bb: &LocalBoundingBox) -> BoundsCheckResult {
+    pub fn test_local_bounding_box(&self, bb: &FrustumBoundingBox) -> BoundsCheckResult {
         unsafe {
             // These unsafe mask shenanigans just check if the sign bit is set for each
             // lane. This is faster than doing a manual comparison with
@@ -362,7 +363,7 @@ impl BoundsCheckResult {
 }
 
 /// Relative to the camera position
-pub struct LocalBoundingBox {
+pub struct FrustumBoundingBox {
     pub min: f32x3,
     pub max: f32x3,
 }

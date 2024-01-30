@@ -2,7 +2,8 @@ use core::mem::size_of;
 
 use core_simd::simd::*;
 
-use crate::{graph::*, unwrap_debug};
+use crate::graph::*;
+use crate::unwrap_debug;
 
 // operations on u8x64 are faster in some cases compared to u64x8
 pub type Level3Node = Simd<u8, 64>;

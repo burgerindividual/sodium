@@ -109,7 +109,6 @@ impl RegionRenderList {
 
     pub fn initialize(&mut self, region_coords: i32x3) {
         self.region_coords = region_coords;
-        // println!("{:?}", region_coords);
     }
 
     pub fn is_empty(&self) -> bool {

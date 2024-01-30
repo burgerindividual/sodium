@@ -28,7 +28,8 @@ public class VisibilityEncoding {
         if (occlusionData.visibility.length() > 0) {
             return occlusionData.visibility.toLongArray()[0];
         } else {
-            return 0;
+            // return 0xFFFFFFFFFL;
+            return VisibilityEncoding.NULL;
         }
     }
 

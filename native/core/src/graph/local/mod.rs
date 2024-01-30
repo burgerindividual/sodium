@@ -36,8 +36,8 @@ pub struct LocalCoordContext {
 }
 
 impl LocalCoordContext {
-    const Y_ADD_SECTIONS: u8 = 128;
-    const Y_ADD_BLOCKS: f64 = 2048.0;
+    pub const Y_ADD_SECTIONS: u8 = 128;
+    pub const Y_ADD_BLOCKS: f64 = 2048.0;
 
     pub fn new(
         frustum_planes: [f32x6; 4],
@@ -54,15 +54,14 @@ impl LocalCoordContext {
             "View distances above 127 are not supported"
         );
 
+        let frustum = LocalFrustum::new(frustum_planes);
+
         // convert Ys from -2048..2047 to 0..4095
         let world_bottom_section_y =
             (world_bottom_section_y as u8).wrapping_add(Self::Y_ADD_SECTIONS);
         let world_top_section_y = (world_top_section_y as u8).wrapping_add(Self::Y_ADD_SECTIONS);
 
-        let frustum = LocalFrustum::new(frustum_planes);
-        // TODO: this seems to be wrong, but then why is y rendering still relative to camera pos?
-        // frustum.plane_ys += Simd::splat(Self::Y_ADD_BLOCKS as f32);
-
+        // TODO: catch when the Y axis wraps, then use that for OOB occlusion culling
         let camera_coords = (camera_global_coords + f64x3::from_xyz(0.0, Self::Y_ADD_BLOCKS, 0.0))
             .rem_euclid(f64x3::splat(4096.0))
             .cast::<f32>();
@@ -83,18 +82,15 @@ impl LocalCoordContext {
             - camera_section_coords.into_raw().cast::<i32>())
             >> REGION_COORD_SHIFT.cast::<i32>();
 
-        let iter_start_section_coords_tmp = camera_section_coords.into_raw().cast::<i32>()
+        let mut iter_start_section_coords_tmp = camera_section_coords.into_raw().cast::<i32>()
             - i32x3::splat(section_view_distance as i32);
+        iter_start_section_coords_tmp[Y] = world_bottom_section_y as i32;
 
-        let iter_underflow_offset = iter_start_section_coords_tmp
-            .simd_lt(i32x3::splat(0))
-            .select(f32x3::splat(-4096.0), f32x3::splat(0.0));
-
-        let mut iter_start_section_coords_tmp = iter_start_section_coords_tmp.cast::<u8>();
-        iter_start_section_coords_tmp[Y] = world_bottom_section_y;
+        let iter_underflow = iter_start_section_coords_tmp.simd_lt(i32x3::splat(0));
+        let iter_underflow_offset = iter_underflow.select(f32x3::splat(-4096.0), f32x3::splat(0.0));
 
         let iter_start_node_coords =
-            LocalNodeCoords::<0>::from_raw(iter_start_section_coords_tmp).into_level::<3>();
+            LocalNodeCoords::<0>::from_raw(iter_start_section_coords_tmp.cast::<u8>()).into_level::<3>();
         let iter_start_index = LocalNodeIndex::pack(iter_start_node_coords);
         let iter_start_section_coords = iter_start_node_coords.into_level::<0>();
 
@@ -108,21 +104,21 @@ impl LocalCoordContext {
             MAX_WORLD_HEIGHT
         );
 
-        // the add is done to make sure we round up during truncation
-        let level_3_node_iter_counts =
-            (LocalNodeCoords::<0>::from_xyz(view_cube_length, world_height, view_cube_length)
-                + LocalNodeCoords::<0>::from_raw(Simd::splat(LocalNodeCoords::<3>::length() - 1)))
-            .into_level::<3>();
+        let iter_end_section_coords_tmp = iter_start_section_coords_tmp
+            + u8x3::from_xyz(view_cube_length, world_height, view_cube_length).cast::<i32>();
 
-        let iter_end_section_coords_tmp = iter_start_section_coords.into_raw().cast::<i32>()
-            + level_3_node_iter_counts
-                .into_level::<0>()
-                .into_raw()
-                .cast::<i32>();
-
-        let iter_overflow_offset = iter_end_section_coords_tmp
-            .simd_gt(Simd::splat(255))
+        // cannot overflow if the axis is already underflowing
+        let iter_overflow_offset = (iter_end_section_coords_tmp.simd_gt(Simd::splat(255))
+            & !iter_underflow)
             .select(f32x3::splat(4096.0), f32x3::splat(0.0));
+
+        // the add is done to make sure we round up during truncation
+        let level_3_node_iter_counts = (LocalNodeCoords::<0>::from_raw(
+            (iter_end_section_coords_tmp
+                + i32x3::splat((LocalNodeCoords::<3>::length() - 1) as i32))
+            .cast::<u8>(),
+        ) - iter_start_section_coords)
+            .into_level::<3>();
 
         let fog_distance_squared = search_distance * search_distance;
 
@@ -179,47 +175,33 @@ impl LocalCoordContext {
     // this only cares about the x and z axis
     fn bounds_inside_fog<const LEVEL: u8>(
         &self,
-        local_bounds: &FrustumBoundingBox,
+        relative_bounds: &RelativeBoundingBox,
     ) -> BoundsCheckResult {
         // find closest to (0,0) because the bounding box coordinates are relative to
         // the camera
-        let closest_in_chunk = local_bounds
+        let closest_in_chunk = f32x3::splat(0.0)
+            .simd_max(relative_bounds.min)
+            .simd_min(relative_bounds.max);
+
+        let furthest_in_chunk = relative_bounds
             .min
             .abs()
-            .simd_lt(local_bounds.max.abs())
-            .select(local_bounds.min, local_bounds.max);
-
-        let furthest_in_chunk = {
-            let adjusted_int = unsafe {
-                // minus 1 if the input is negative
-                // SAFETY: values will never be out of range
-                closest_in_chunk.to_int_unchecked::<i32>()
-                    + (closest_in_chunk.to_bits().cast::<i32>() >> Simd::splat(31))
-            };
-
-            let add_bit = Simd::splat(0b1000 << LEVEL);
-            // additive is nonzero if the bit is *not* set
-            let additive = ((adjusted_int & add_bit) ^ add_bit) << Simd::splat(1);
-
-            // set the bottom (4 + LEVEL) bits to 0
-            let bitmask = Simd::splat(-1 << (4 + LEVEL));
-
-            ((adjusted_int + additive) & bitmask).cast::<f32>()
-        };
+            .simd_gt(relative_bounds.max.abs())
+            .select(relative_bounds.min, relative_bounds.max);
 
         // combine operations and single out the XZ lanes on both extrema from here.
         // also, we don't have to subtract from the camera pos because the bounds are
         // already relative to it
-        let differences = simd_swizzle!(
+        let axis_distances = simd_swizzle!(
             closest_in_chunk,
             furthest_in_chunk,
-            [First(X), First(Z), Second(X), Second(Z)]
+            [First(X), Second(X), First(Z), Second(Z)]
         );
-        let differences_squared = differences * differences;
+        let axis_distances_squared = axis_distances * axis_distances;
 
         // add Xs and Zs
-        let distances_squared =
-            simd_swizzle!(differences_squared, [0, 2]) + simd_swizzle!(differences_squared, [1, 3]);
+        let distances_squared = simd_swizzle!(axis_distances_squared, [0, 1])
+            + simd_swizzle!(axis_distances_squared, [2, 3]);
 
         // janky way of calculating the result from the two points
         unsafe {
@@ -235,7 +217,7 @@ impl LocalCoordContext {
     fn node_get_local_bounds<const LEVEL: u8>(
         &self,
         local_node_coords: LocalNodeCoords<LEVEL>,
-    ) -> FrustumBoundingBox {
+    ) -> RelativeBoundingBox {
         let raw_section_pos = local_node_coords.into_level::<0>().into_raw();
         let converted_pos = raw_section_pos.cast::<f32>() * Simd::splat(16.0);
 
@@ -243,14 +225,12 @@ impl LocalCoordContext {
             + raw_section_pos
                 .simd_lt(self.iter_start_section_coords.into_raw())
                 .cast()
-                // TODO: psure this just aint right lol
                 .select(self.iter_overflow_offset, self.iter_underflow_offset)
-            // TODO: should the y coordinate of the camera be not considered here?
             - self.camera_coords;
 
         let max_pos = min_pos + Simd::splat((LocalNodeCoords::<LEVEL>::length() * 16) as f32);
 
-        FrustumBoundingBox {
+        RelativeBoundingBox {
             min: min_pos,
             max: max_pos,
         }
@@ -290,7 +270,7 @@ impl LocalFrustum {
         }
     }
 
-    pub fn test_local_bounding_box(&self, bb: &FrustumBoundingBox) -> BoundsCheckResult {
+    pub fn test_local_bounding_box(&self, bb: &RelativeBoundingBox) -> BoundsCheckResult {
         unsafe {
             // These unsafe mask shenanigans just check if the sign bit is set for each
             // lane. This is faster than doing a manual comparison with
@@ -363,7 +343,7 @@ impl BoundsCheckResult {
 }
 
 /// Relative to the camera position
-pub struct FrustumBoundingBox {
+pub struct RelativeBoundingBox {
     pub min: f32x3,
     pub max: f32x3,
 }

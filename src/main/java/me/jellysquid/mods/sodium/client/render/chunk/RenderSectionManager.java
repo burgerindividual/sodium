@@ -186,7 +186,7 @@ public class RenderSectionManager {
                 RenderSection section = this.sectionByPosition.get(sectionKey);
 
                 if (section != null) {
-                    visitor.accept(section);
+                    visitor.visit(section, true);
                 }
             }
 

@@ -1,2 +1,2 @@
 [build]
-rustflags = ["-Ctarget-cpu=x86-64-v3"]
+rustflags = ["-Ctarget-cpu=x86-64-v3", "-Cforce-unwind-tables=true"]

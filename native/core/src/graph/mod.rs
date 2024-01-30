@@ -301,7 +301,9 @@ impl Graph {
     }
 
     pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {
-        let local_coord = LocalNodeCoords::from_raw(section_coord.cast::<u8>());
+        let local_coord = LocalNodeCoords::from_raw(
+            section_coord.cast::<u8>() + u8x3::from_xyz(0, LocalCoordContext::Y_ADD_SECTIONS, 0),
+        );
         let index = LocalNodeIndex::<0>::pack(local_coord);
 
         // *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;

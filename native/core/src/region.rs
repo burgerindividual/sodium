@@ -152,6 +152,10 @@ pub struct StagingRegionRenderLists {
 }
 
 impl StagingRegionRenderLists {
+    // if this method needs more speed, do the following:
+    // 1. make the operations use 32 bits per lane, cast early
+    // 2. force the usage of 4-lane operations
+    // this should atleast help on x86_64 and maybe aarch64
     pub fn touch_region(
         &mut self,
         coord_context: &LocalCoordContext,
@@ -169,20 +173,24 @@ impl StagingRegionRenderLists {
 
         // we only want to add the region on the first encounter of the region to get
         // the correct render order
-        if !region_render_list.is_initialized() {
-            region_render_list.initialize(global_region_coords);
-            self.ordered_region_indices.push(local_region_index);
-        } else {
+        self.ordered_region_indices
+            .push_conditionally(local_region_index, !region_render_list.is_initialized());
+
+        if region_render_list.is_initialized() {
             debug_assert_eq!(global_region_coords, region_render_list.region_coords);
         }
+
+        region_render_list.initialize(global_region_coords);
 
         region_render_list
     }
 
-    pub fn compile_render_lists(&self, results: &mut SortedRegionRenderLists) {
+    pub fn pop_render_lists(&mut self, results: &mut SortedRegionRenderLists) {
         for local_region_index in self.ordered_region_indices.get_slice() {
             let render_region_list = unsafe {
-                unwrap_debug!(self.region_render_lists.get(local_region_index.0 as usize))
+                unwrap_debug!(self
+                    .region_render_lists
+                    .get_mut(local_region_index.0 as usize))
             };
 
             // if a region has no sections, skip it. this is a product of making sure the
@@ -190,14 +198,10 @@ impl StagingRegionRenderLists {
             if !render_region_list.is_empty() {
                 results.push(*render_region_list);
             }
-        }
-    }
 
-    pub fn clear(&mut self) {
+            render_region_list.clear();
+        }
+
         self.ordered_region_indices.clear();
-
-        for render_list in &mut self.region_render_lists {
-            render_list.clear();
-        }
     }
 }

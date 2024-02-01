@@ -46,6 +46,7 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
     }
 
     pub fn reset(&mut self) {
+        // TODO: should we drop everything between head and tail?
         self.head = 0;
         self.tail = 0;
     }
@@ -120,8 +121,8 @@ impl<T, const CAPACITY: usize> CInlineVec<T, CAPACITY> {
     }
 
     pub fn clear(&mut self) {
-        unsafe {
-            for i in 0..self.count as usize {
+        for i in 0..self.count as usize {
+            unsafe {
                 unwrap_debug!(self.data.get_mut(i)).assume_init_drop();
             }
         }

@@ -90,7 +90,8 @@ impl LocalCoordContext {
         let iter_underflow_offset = iter_underflow.select(f32x3::splat(-4096.0), f32x3::splat(0.0));
 
         let iter_start_node_coords =
-            LocalNodeCoords::<0>::from_raw(iter_start_section_coords_tmp.cast::<u8>()).into_level::<3>();
+            LocalNodeCoords::<0>::from_raw(iter_start_section_coords_tmp.cast::<u8>())
+                .into_level::<3>();
         let iter_start_index = LocalNodeIndex::pack(iter_start_node_coords);
         let iter_start_section_coords = iter_start_node_coords.into_level::<0>();
 
@@ -139,6 +140,7 @@ impl LocalCoordContext {
         }
     }
 
+    // TODO: clean
     pub fn test_node<const LEVEL: u8>(
         &self,
         local_node_index: LocalNodeIndex<LEVEL>,
@@ -148,10 +150,14 @@ impl LocalCoordContext {
         let bounds = self.node_get_local_bounds(local_node_coords);
 
         let mut result = self.bounds_inside_fog::<LEVEL>(&bounds);
-        // should continue doing tests if we're already known to be outside? or is that
-        // more of a detriment?
-        result = result.combine(self.frustum.test_local_bounding_box(&bounds));
-        result = result.combine(self.bounds_inside_world_height(local_node_coords));
+
+        if result != BoundsCheckResult::Outside {
+            result = result.combine(self.frustum.test_local_bounding_box(&bounds));
+        }
+
+        if result != BoundsCheckResult::Outside {
+            result = result.combine(self.bounds_inside_world_height(local_node_coords));
+        }
 
         result
     }
@@ -323,6 +329,7 @@ impl LocalFrustum {
 }
 
 #[repr(u8)]
+#[derive(PartialEq)]
 pub enum BoundsCheckResult {
     Outside = 0,
     Partial = 1,

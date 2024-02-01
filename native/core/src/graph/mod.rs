@@ -70,7 +70,7 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     //    before.
     // 2. The frustum includes sections that are just barely in view, adding more than half in a
     //    worst-case scenario. This effect becomes more noticeable at smaller render distances.
-    // count = (count * 100) / 55;
+    count = (count * 100) / 55;
 
     count
 }
@@ -83,25 +83,9 @@ pub struct BfsCachedState {
     queue_2: BfsQueue,
 }
 
-impl BfsCachedState {
-    pub fn reset(&mut self) {
-        self.incoming_directions.fill(GraphDirectionSet::NONE);
-        self.staging_render_lists.clear();
-        // TODO: are these necessary?
-        self.queue_1.reset();
-        self.queue_2.reset();
-    }
-}
-
 #[derive(InitDefaultInPlace)]
 pub struct FrustumFogCachedState {
     section_is_visible_bits: LinearBitOctree,
-}
-
-impl FrustumFogCachedState {
-    pub fn reset(&mut self) {
-        self.section_is_visible_bits.clear();
-    }
 }
 
 #[derive(InitDefaultInPlace)]
@@ -137,12 +121,7 @@ impl Graph {
 
         self.bfs_cached_state
             .staging_render_lists
-            .compile_render_lists(&mut self.results);
-
-        // this will make sure nothing tries to use it after culling, and it should be
-        // clean for the next invocation of this method
-        self.bfs_cached_state.reset();
-        self.frustum_fog_cached_state.reset();
+            .pop_render_lists(&mut self.results);
 
         &self.results
     }
@@ -245,10 +224,16 @@ impl Graph {
                     .staging_render_lists
                     .touch_region(coord_context, local_section_coords);
 
+                let section_incoming_directions_mut = local_section_index
+                    .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
+                let section_incoming_directions = *section_incoming_directions_mut;
+                // clear the incoming directions for the next time this is called
+                *section_incoming_directions_mut = GraphDirectionSet::NONE;
+
                 if !self
                     .frustum_fog_cached_state
                     .section_is_visible_bits
-                    .get(local_section_index)
+                    .get_and_clear(local_section_index)
                 {
                     // skip node
                     continue;
@@ -260,9 +245,6 @@ impl Graph {
 
                 // use incoming directions to determine outgoing directions, given the
                 // visibility bits set
-                let section_incoming_directions = *local_section_index
-                    .index_array_unchecked(&self.bfs_cached_state.incoming_directions);
-
                 let mut section_outgoing_directions = local_section_index
                     .index_array_unchecked(&self.section_visibility_direction_sets)
                     .get_outgoing_directions(section_incoming_directions);
@@ -274,12 +256,12 @@ impl Graph {
                 // enqueued
                 let section_neighbor_indices = local_section_index.get_all_neighbors();
 
-                for direction in section_outgoing_directions {
-                    let neighbor_index = section_neighbor_indices.get(direction);
+                for current_outgoing_direction in section_outgoing_directions {
+                    let neighbor_index = section_neighbor_indices.get(current_outgoing_direction);
 
                     // the outgoing direction for the current node is the incoming direction for the
                     // neighbor
-                    let current_incoming_direction = direction.opposite();
+                    let current_incoming_direction = current_outgoing_direction.opposite();
 
                     let neighbor_incoming_directions = neighbor_index
                         .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
@@ -298,6 +280,9 @@ impl Graph {
             read_queue_ref.reset();
             swap(&mut read_queue_ref, &mut write_queue_ref);
         }
+
+        self.bfs_cached_state.queue_1.reset();
+        self.bfs_cached_state.queue_2.reset();
     }
 
     pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {

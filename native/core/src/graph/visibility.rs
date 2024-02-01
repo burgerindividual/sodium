@@ -78,6 +78,10 @@ impl GraphDirectionSet {
         self.0 |= set.0;
     }
 
+    pub fn remove(&mut self, dir: GraphDirection) {
+        self.0 &= !(1 << dir as u8);
+    }
+
     pub const fn contains(&self, dir: GraphDirection) -> bool {
         (self.0 & (1 << dir as u8)) != 0
     }
@@ -154,7 +158,7 @@ Fits in a u16.
 
 The layout can be seen here, where each number in the grid represents the
 bit location: http://tinyurl.com/sodium-vis-triangle
- */
+*/
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct VisibilityData(u16);

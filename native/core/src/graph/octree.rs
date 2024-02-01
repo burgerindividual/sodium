@@ -30,37 +30,43 @@ impl InitDefaultInPlace for *mut LinearBitOctree {
 // have the top 8 bits set, and our arrays are exactly 2^24 bytes long.
 impl LinearBitOctree {
     /// Returns true if all of the bits in the node are true
-    pub fn get<const LEVEL: u8>(&self, index: LocalNodeIndex<LEVEL>) -> bool {
+    pub fn get_and_clear<const LEVEL: u8>(&mut self, index: LocalNodeIndex<LEVEL>) -> bool {
         let array_index = index.as_array_index_unscaled();
 
+        let result;
         match LEVEL {
             0 => {
                 let level_1_index = array_index >> 3;
                 let bit_index = array_index & 0b111;
 
-                let level_1_node = unsafe { *unwrap_debug!(self.level_1.get(level_1_index)) };
+                let level_1_node = unsafe { unwrap_debug!(self.level_1.get_mut(level_1_index)) };
 
-                let bit = (level_1_node >> bit_index) & 0b1;
-
-                bit == 0b1
+                let bit = 0b1 << bit_index;
+                result = (*level_1_node & bit) != 0;
+                *level_1_node &= !bit;
             }
             1 => {
-                let level_1_node = unsafe { *unwrap_debug!(self.level_1.get(array_index)) };
+                let level_1_node = unsafe { unwrap_debug!(self.level_1.get_mut(array_index)) };
 
-                level_1_node == u8::MAX
+                result = *level_1_node == u8::MAX;
+                *level_1_node = 0_u8;
             }
             2 => {
-                let level_2_node = unsafe { *unwrap_debug!(self.level_2.get(array_index)) };
+                let level_2_node = unsafe { unwrap_debug!(self.level_2.get_mut(array_index)) };
 
-                level_2_node == u64::MAX
+                result = *level_2_node == u64::MAX;
+                *level_2_node = 0_u64;
             }
             3 => {
-                let level_3_node = unsafe { *unwrap_debug!(self.level_3.get(array_index)) };
+                let level_3_node = unsafe { unwrap_debug!(self.level_3.get_mut(array_index)) };
 
-                level_3_node == u8x64::splat(u8::MAX)
+                result = *level_3_node == u8x64::splat(u8::MAX);
+                *level_3_node = u8x64::splat(0_u8);
             }
             _ => unreachable!(),
         }
+
+        result
     }
 
     /// Sets all of the bits in the node to the given value
@@ -96,46 +102,6 @@ impl LinearBitOctree {
                 let level_3_node = unsafe { unwrap_debug!(self.level_3.get_mut(array_index)) };
 
                 *level_3_node = u8x64::splat(if value { u8::MAX } else { 0_u8 });
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn copy_from<const LEVEL: u8>(&mut self, src: &Self, index: LocalNodeIndex<LEVEL>) {
-        let array_index = index.as_array_index_unscaled();
-
-        match LEVEL {
-            0 => {
-                let level_1_index = array_index >> 3;
-                let bit_index = array_index & 0b111;
-
-                let level_1_node_src = unsafe { *unwrap_debug!(src.level_1.get(level_1_index)) };
-                let level_1_node_dst =
-                    unsafe { unwrap_debug!(self.level_1.get_mut(level_1_index)) };
-
-                let bit_mask = 0b1 << bit_index;
-                let src_bit = level_1_node_src & bit_mask;
-                // clear the bit in the destination so the bitwise OR can always act as a copy
-                *level_1_node_dst &= !bit_mask;
-                *level_1_node_dst |= src_bit;
-            }
-            1 => {
-                let level_1_node_src = unsafe { *unwrap_debug!(src.level_1.get(array_index)) };
-                let level_1_node_dst = unsafe { unwrap_debug!(self.level_1.get_mut(array_index)) };
-
-                *level_1_node_dst = level_1_node_src;
-            }
-            2 => {
-                let level_2_node_src = unsafe { *unwrap_debug!(src.level_2.get(array_index)) };
-                let level_2_node_dst = unsafe { unwrap_debug!(self.level_2.get_mut(array_index)) };
-
-                *level_2_node_dst = level_2_node_src;
-            }
-            3 => {
-                let level_3_node_src = unsafe { *unwrap_debug!(src.level_3.get(array_index)) };
-                let level_3_node_dst = unsafe { unwrap_debug!(self.level_3.get_mut(array_index)) };
-
-                *level_3_node_dst = level_3_node_src;
             }
             _ => unreachable!(),
         }

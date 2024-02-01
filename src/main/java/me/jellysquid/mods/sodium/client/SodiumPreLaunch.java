@@ -12,12 +12,6 @@ public class SodiumPreLaunch implements PreLaunchEntrypoint {
         GraphicsAdapterProbe.findAdapters();
         EarlyDriverScanner.scanDrivers();
         Workarounds.init();
-        try {
-            Thread.sleep(10000);
-        } catch (InterruptedException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
         CoreLib.init();
     }
 }

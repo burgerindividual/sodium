@@ -1,6 +1,5 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(portable_simd)]
-#![feature(cell_leak)]
 #![feature(maybe_uninit_slice)]
 #![feature(fn_ptr_trait)]
 // In most cases, we want to have functions and structs laying around

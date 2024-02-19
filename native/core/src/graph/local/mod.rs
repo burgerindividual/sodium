@@ -164,10 +164,13 @@ impl LocalCoordContext {
 
         let bounds = self.node_get_local_bounds::<LEVEL>(local_section_coords);
 
-        let mut result = self.bounds_inside_fog::<LEVEL>(&bounds);
+        let mut result = self.bounds_inside_fog::<LEVEL>(bounds);
 
         if result != BoundsCheckResult::Outside {
-            result = result.combine(self.frustum.test_local_bounding_box(&bounds));
+            result = result.combine(
+                self.frustum
+                    .test_local_bounding_box(bounds.add_section_frustum_epsilon()),
+            );
         }
 
         if result != BoundsCheckResult::Outside {
@@ -194,9 +197,9 @@ impl LocalCoordContext {
     }
 
     // this only cares about the x and z axis
-    fn bounds_inside_fog<const LEVEL: u8>(
+    pub fn bounds_inside_fog<const LEVEL: u8>(
         &self,
-        relative_bounds: &RelativeBoundingBox,
+        relative_bounds: RelativeBoundingBox,
     ) -> BoundsCheckResult {
         // find closest to (0,0) because the bounding box coordinates are relative to
         // the camera
@@ -235,7 +238,7 @@ impl LocalCoordContext {
         }
     }
 
-    fn node_get_local_bounds<const LEVEL: u8>(
+    pub fn node_get_local_bounds<const LEVEL: u8>(
         &self,
         local_section_coords: LocalNodeCoords<0>,
     ) -> RelativeBoundingBox {
@@ -267,6 +270,7 @@ impl LocalCoordContext {
             .simd_lt(self.iter_start_section_coords.into_raw())
     }
 
+    // TODO OPT: the i8s here might need to be replaced, the codegen isn't that great
     pub fn get_valid_directions(
         &self,
         local_section_coords: LocalNodeCoords<0>,
@@ -307,7 +311,7 @@ impl LocalFrustum {
         }
     }
 
-    pub fn test_local_bounding_box(&self, bb: &RelativeBoundingBox) -> BoundsCheckResult {
+    pub fn test_local_bounding_box(&self, bb: RelativeBoundingBox) -> BoundsCheckResult {
         unsafe {
             // These unsafe mask shenanigans just check if the sign bit is set for each
             // lane. This is faster than doing a manual comparison with
@@ -381,7 +385,18 @@ impl BoundsCheckResult {
 }
 
 /// Relative to the camera position
+#[derive(Clone, Copy)]
 pub struct RelativeBoundingBox {
     pub min: f32x3,
     pub max: f32x3,
+}
+
+impl RelativeBoundingBox {
+    const BOUNDING_BOX_EPSILON: f32 = 1.0 + 0.25;
+
+    pub fn add_section_frustum_epsilon(mut self) -> Self {
+        self.max += f32x3::splat(Self::BOUNDING_BOX_EPSILON);
+        self.min -= f32x3::splat(Self::BOUNDING_BOX_EPSILON);
+        self
+    }
 }

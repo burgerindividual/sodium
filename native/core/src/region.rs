@@ -167,7 +167,6 @@ impl StagingRegionRenderLists {
         local_section_coords: LocalNodeCoords<0>,
         axis_wrap_directions: Mask<i8, 3>,
     ) -> &mut RegionRenderList {
-        // TODO: account for wrapping here
         let local_region_index = LocalRegionIndex::from_local_section(local_section_coords);
         let region_render_list = unsafe {
             unwrap_debug!(self

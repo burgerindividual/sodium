@@ -17,6 +17,7 @@ mod java {
     use crate::ffi::*;
     use crate::graph::local::LocalCoordContext;
     use crate::graph::visibility::VisibilityData;
+    use crate::mem;
     use crate::mem::LibcAllocVtable;
     use crate::panic::PanicHandlerFn;
 
@@ -52,7 +53,7 @@ mod java {
         _: *mut JEnv,
         _: *mut JClass,
     ) -> Jlong {
-        let graph = Graph::new_boxed();
+        let graph = mem::default_boxed::<Graph>();
 
         Box::into_raw(graph) as usize as Jlong
     }

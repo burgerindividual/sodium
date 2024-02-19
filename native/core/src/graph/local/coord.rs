@@ -44,6 +44,10 @@ impl<const LEVEL: u8> LocalNodeCoords<LEVEL> {
     pub fn length() -> u8 {
         1 << LEVEL
     }
+
+    pub fn size() -> u32 {
+        1 << (LEVEL * 3)
+    }
 }
 
 impl<const LEVEL: u8> Coords3<u8> for LocalNodeCoords<LEVEL> {
@@ -73,20 +77,20 @@ impl<const LEVEL: u8> Coords3<u8> for LocalNodeCoords<LEVEL> {
 pub struct LocalNodeIndex<const LEVEL: u8>(pub u32);
 
 // XYZXYZXYZXYZXYZXYZXYZXYZ
-const LOCAL_NODE_INDEX_X_MASK: u32 = 0b10010010_01001001_00100100;
-const LOCAL_NODE_INDEX_Y_MASK: u32 = 0b01001001_00100100_10010010;
-const LOCAL_NODE_INDEX_Z_MASK: u32 = 0b00100100_10010010_01001001;
+const MORTON_X_MASK: u32 = 0b10010010_01001001_00100100;
+const MORTON_Y_MASK: u32 = 0b01001001_00100100_10010010;
+const MORTON_Z_MASK: u32 = 0b00100100_10010010_01001001;
 
 impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
-    const LEVEL_MASK: u32 = (1 << (24 - (LEVEL * 3))) - 1;
-
     pub fn pack(unpacked: LocalNodeCoords<LEVEL>) -> Self {
+        let section_coords = unpacked.into_level::<0>();
+
         // allocate one byte per bit for each element.
         // each element is still has its individual bits in linear ordering, but the
         // bytes in the vector are in morton ordering.
         #[rustfmt::skip]
         let expanded_linear_bits = simd_swizzle!(
-            unpacked.0,
+            section_coords.0,
             [
             //  X, Y, Z
                 2, 1, 0,
@@ -125,110 +129,7 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
         Self(morton_packed)
     }
 
-    pub fn inc_x(self) -> Self {
-        self.inc::<{ LOCAL_NODE_INDEX_X_MASK }>()
-    }
-
-    pub fn inc_y(self) -> Self {
-        self.inc::<{ LOCAL_NODE_INDEX_Y_MASK }>()
-    }
-
-    pub fn inc_z(self) -> Self {
-        self.inc::<{ LOCAL_NODE_INDEX_Z_MASK }>()
-    }
-
-    pub fn dec_x(self) -> Self {
-        self.dec::<{ LOCAL_NODE_INDEX_X_MASK }>()
-    }
-
-    pub fn dec_y(self) -> Self {
-        self.dec::<{ LOCAL_NODE_INDEX_Y_MASK }>()
-    }
-
-    pub fn dec_z(self) -> Self {
-        self.dec::<{ LOCAL_NODE_INDEX_Z_MASK }>()
-    }
-
-    pub fn inc<const AXIS_MASK: u32>(self) -> Self {
-        let mask = AXIS_MASK & Self::LEVEL_MASK;
-
-        // make the other bits in the number 1
-        let mut masked = self.0 | !mask;
-
-        // increment
-        masked = masked.wrapping_add(1);
-
-        // modify only the masked bits in the original number
-        Self((self.0 & !mask) | (masked & mask))
-    }
-
-    pub fn dec<const AXIS_MASK: u32>(self) -> Self {
-        let mask = AXIS_MASK & Self::LEVEL_MASK;
-
-        // make the other bits in the number 0
-        let mut masked = self.0 & mask;
-
-        // decrement
-        masked = masked.wrapping_sub(1);
-
-        // modify only the masked bits in the original number
-        Self((self.0 & !mask) | (masked & mask))
-    }
-
-    pub fn as_array_index_scaled(&self) -> usize {
-        // Each level has an extra 3 bits associated with it, 1 bit per axis, so each level
-        // effectively shifts each axis to the right by 1
-        (self.0 >> (LEVEL * 3)) as usize
-    }
-
-    pub fn as_array_index_unscaled(&self) -> usize {
-        self.0 as usize
-    }
-
-    pub fn iter_lower_nodes<const LOWER_LEVEL: u8>(&self) -> LowerNodeIter<LEVEL, LOWER_LEVEL> {
-        LowerNodeIter::new(self)
-    }
-
-    pub fn get_all_neighbors(&self) -> NeighborNodes<LEVEL> {
-        const DEC_MASK: Simd<u32, 6> = Simd::from_array([
-            LOCAL_NODE_INDEX_X_MASK,
-            LOCAL_NODE_INDEX_Y_MASK,
-            LOCAL_NODE_INDEX_Z_MASK,
-            u32::MAX,
-            u32::MAX,
-            u32::MAX,
-        ]);
-
-        const INC_MASK: Simd<u32, 6> = Simd::from_array([
-            u32::MAX,
-            u32::MAX,
-            u32::MAX,
-            LOCAL_NODE_INDEX_X_MASK,
-            LOCAL_NODE_INDEX_Y_MASK,
-            LOCAL_NODE_INDEX_Z_MASK,
-        ]);
-
-        const FINAL_MASK: Simd<u32, 6> = Simd::from_array([
-            LOCAL_NODE_INDEX_X_MASK,
-            LOCAL_NODE_INDEX_Y_MASK,
-            LOCAL_NODE_INDEX_Z_MASK,
-            LOCAL_NODE_INDEX_X_MASK,
-            LOCAL_NODE_INDEX_Y_MASK,
-            LOCAL_NODE_INDEX_Z_MASK,
-        ]);
-
-        let vec = Simd::<u32, 6>::splat(self.0);
-        // make the other bits in the number 0 for dec, 1 for inc
-        let mut masked = (vec & DEC_MASK) | !INC_MASK;
-
-        // inc/dec
-        masked = (masked.cast::<i32>() + Simd::from_array([-1, -1, -1, 1, 1, 1])).cast::<u32>();
-
-        // modify only the masked bits in the original number
-        NeighborNodes::new((vec & !FINAL_MASK) | (masked & FINAL_MASK))
-    }
-
-    pub fn unpack(&self) -> LocalNodeCoords<LEVEL> {
+    pub fn unpack_section(&self) -> LocalNodeCoords<0> {
         // allocate one byte per bit for each element.
         // each element is still has its individual bits in morton ordering, but the
         // bytes in the vector are in linear ordering.
@@ -293,19 +194,83 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
         }
         .to_bitmask();
 
-        LocalNodeCoords::from_raw(u8x3::from_slice(&linear_packed.to_le_bytes()[0..3]))
+        let section_coords = u8x3::from_slice(&linear_packed.to_le_bytes()[0..3]);
+
+        LocalNodeCoords::<0>::from_raw(section_coords)
     }
 
-    pub fn to_level<const OTHER_LEVEL: u8>(self) -> LocalNodeIndex<OTHER_LEVEL> {
-        if OTHER_LEVEL > LEVEL {
-            LocalNodeIndex::<OTHER_LEVEL>(self.0 >> ((OTHER_LEVEL - LEVEL) * 3))
-        } else {
-            LocalNodeIndex::<OTHER_LEVEL>(self.0 << ((LEVEL - OTHER_LEVEL) * 3))
-        }
+    pub fn unpack(&self) -> LocalNodeCoords<LEVEL> {
+        self.unpack_section().into_level()
     }
-}
 
-impl LocalNodeIndex<0> {
+    pub fn inc_x(self) -> Self {
+        self.inc::<{ MORTON_X_MASK }>()
+    }
+
+    pub fn inc_y(self) -> Self {
+        self.inc::<{ MORTON_Y_MASK }>()
+    }
+
+    pub fn inc_z(self) -> Self {
+        self.inc::<{ MORTON_Z_MASK }>()
+    }
+
+    pub fn dec_x(self) -> Self {
+        self.dec::<{ MORTON_X_MASK }>()
+    }
+
+    pub fn dec_y(self) -> Self {
+        self.dec::<{ MORTON_Y_MASK }>()
+    }
+
+    pub fn dec_z(self) -> Self {
+        self.dec::<{ MORTON_Z_MASK }>()
+    }
+
+    pub fn inc<const AXIS_MASK: u32>(self) -> Self {
+        // get the value of 1 in the current axis representation
+        let axis_one = AXIS_MASK & 0b111;
+        // scale it to the current size of the level
+        let axis_level_one = axis_one << (LEVEL * 3);
+
+        // make the other bits in the number 1
+        let mut masked = self.0 | !AXIS_MASK;
+
+        // do the thing
+        masked = masked.wrapping_add(axis_level_one);
+
+        // modify only the masked bits in the original number
+        let current_axis_bits = masked & AXIS_MASK;
+        let other_axis_bits = self.0 & !AXIS_MASK;
+
+        // combine bits from all axis
+        Self(other_axis_bits | current_axis_bits)
+    }
+
+    pub fn dec<const AXIS_MASK: u32>(self) -> Self {
+        // get the value of 1 in the current axis representation
+        let axis_one = AXIS_MASK & 0b111;
+        // scale it to the current size of the level
+        let axis_level_one = axis_one << (LEVEL * 3);
+
+        // make the other bits in the number 0
+        let mut masked = self.0 & AXIS_MASK;
+
+        // do the thing
+        masked = masked.wrapping_sub(axis_level_one);
+
+        // modify only the masked bits in the original number
+        let current_axis_bits = masked & AXIS_MASK;
+        let other_axis_bits = self.0 & !AXIS_MASK;
+
+        // combine bits from all axis
+        Self(other_axis_bits | current_axis_bits)
+    }
+
+    pub fn as_array_index(&self) -> usize {
+        self.0 as usize
+    }
+
     pub fn index_array_unchecked<'array, T>(
         &self,
         array: &'array [T; SECTIONS_IN_GRAPH],
@@ -313,7 +278,7 @@ impl LocalNodeIndex<0> {
         // SAFETY: Using unsafe gets are okay because the internal representation will
         // never have the top 8 bits set, and the arrays are exactly the length
         // of what we can represent with 24 bits.
-        unsafe { unwrap_debug!(array.get(self.as_array_index_scaled())) }
+        unsafe { unwrap_debug!(array.get(self.as_array_index())) }
     }
 
     pub fn index_array_unchecked_mut<'array, T>(
@@ -321,7 +286,59 @@ impl LocalNodeIndex<0> {
         array: &'array mut [T; SECTIONS_IN_GRAPH],
     ) -> &'array mut T {
         // SAFETY: see documentation in index_array_unchecked
-        unsafe { unwrap_debug!(array.get_mut(self.as_array_index_scaled())) }
+        unsafe { unwrap_debug!(array.get_mut(self.as_array_index())) }
+    }
+
+    pub fn iter_lower_nodes<const LOWER_LEVEL: u8>(&self) -> LowerNodeIter<LEVEL, LOWER_LEVEL> {
+        LowerNodeIter::new(self)
+    }
+
+    pub fn get_all_neighbors(&self) -> NeighborNodes<LEVEL> {
+        const DEC_MASK: Simd<u32, 6> = Simd::from_array([
+            MORTON_X_MASK,
+            MORTON_Y_MASK,
+            MORTON_Z_MASK,
+            u32::MAX,
+            u32::MAX,
+            u32::MAX,
+        ]);
+
+        const INC_MASK: Simd<u32, 6> = Simd::from_array([
+            u32::MAX,
+            u32::MAX,
+            u32::MAX,
+            MORTON_X_MASK,
+            MORTON_Y_MASK,
+            MORTON_Z_MASK,
+        ]);
+
+        const FINAL_MASK: Simd<u32, 6> = Simd::from_array([
+            MORTON_X_MASK,
+            MORTON_Y_MASK,
+            MORTON_Z_MASK,
+            MORTON_X_MASK,
+            MORTON_Y_MASK,
+            MORTON_Z_MASK,
+        ]);
+
+        let additive = Simd::from_array([
+            -(((MORTON_X_MASK & 0b111) << (LEVEL * 3)) as i32),
+            -(((MORTON_Y_MASK & 0b111) << (LEVEL * 3)) as i32),
+            -(((MORTON_Z_MASK & 0b111) << (LEVEL * 3)) as i32),
+            ((MORTON_X_MASK & 0b111) << (LEVEL * 3)) as i32,
+            ((MORTON_Y_MASK & 0b111) << (LEVEL * 3)) as i32,
+            ((MORTON_Z_MASK & 0b111) << (LEVEL * 3)) as i32,
+        ]);
+
+        let vec = Simd::<u32, 6>::splat(self.0);
+        // make the other bits in the number 0 for dec, 1 for inc
+        let mut masked = (vec & DEC_MASK) | !INC_MASK;
+
+        // inc/dec
+        masked = (masked.cast::<i32>() + additive).cast::<u32>();
+
+        // modify only the masked bits in the original number
+        NeighborNodes::new((vec & !FINAL_MASK) | (masked & FINAL_MASK))
     }
 }
 
@@ -334,11 +351,12 @@ impl<const LEVEL: u8, const LOWER_LEVEL: u8> LowerNodeIter<LEVEL, LOWER_LEVEL> {
     fn new(index: &LocalNodeIndex<LEVEL>) -> Self {
         assert_eq!(LOWER_LEVEL, LEVEL - 1);
 
-        let lower_index = index.to_level::<LOWER_LEVEL>();
+        // the representation is the same
+        let lower_index = LocalNodeIndex::<LOWER_LEVEL>(index.0);
 
         Self {
             current: lower_index,
-            end: lower_index.0 + 8,
+            end: lower_index.0 + LocalNodeCoords::<LEVEL>::size(),
         }
     }
 }
@@ -352,7 +370,7 @@ impl<const LEVEL: u8, const LOWER_LEVEL: u8> Iterator for LowerNodeIter<LEVEL, L
         } else {
             let current = self.current;
 
-            self.current.0 += 1;
+            self.current.0 += LocalNodeCoords::<LOWER_LEVEL>::size();
 
             Some(current)
         }

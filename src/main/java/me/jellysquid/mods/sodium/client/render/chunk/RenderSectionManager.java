@@ -471,6 +471,7 @@ public class RenderSectionManager {
     }
 
     public boolean needsUpdate() {
+        // return true;
         return this.needsUpdate;
     }
 

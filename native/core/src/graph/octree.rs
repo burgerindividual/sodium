@@ -9,13 +9,11 @@ use crate::unwrap_debug;
 pub type Level3Node = Simd<u8, 64>;
 pub type Level2Node = u64;
 pub type Level1Node = u8;
-pub type Level0Node = bool;
 
 pub union LinearBitOctree {
-    // the divide by 8 is because there are 8 bits per byte
-    level_3: [Level3Node; SECTIONS_IN_GRAPH / size_of::<Level3Node>() / 8],
-    level_2: [Level2Node; SECTIONS_IN_GRAPH / size_of::<Level2Node>() / 8],
-    level_1: [Level1Node; SECTIONS_IN_GRAPH / size_of::<Level1Node>() / 8],
+    level_3: [Level3Node; SECTIONS_IN_GRAPH / size_of::<Level3Node>() / (u8::BITS as usize)],
+    level_2: [Level2Node; SECTIONS_IN_GRAPH / size_of::<Level2Node>() / (u8::BITS as usize)],
+    level_1: [Level1Node; SECTIONS_IN_GRAPH / size_of::<Level1Node>() / (u8::BITS as usize)],
 }
 
 impl InitDefaultInPlace for *mut LinearBitOctree {
@@ -27,11 +25,11 @@ impl InitDefaultInPlace for *mut LinearBitOctree {
 }
 
 // All of the unsafe gets should be safe, because LocalNodeIndex should never
-// have the top 8 bits set, and our arrays are exactly 2^24 bytes long.
+// have the top 8 bits set, and our arrays are exactly 2^24 bits long.
 impl LinearBitOctree {
     /// Returns true if all of the bits in the node are true
-    pub fn get_and_clear<const LEVEL: u8>(&mut self, index: LocalNodeIndex<LEVEL>) -> bool {
-        let array_index = index.as_array_index_unscaled();
+    pub fn get_and_clear<const LEVEL: u8>(&mut self, node_index: LocalNodeIndex<LEVEL>) -> bool {
+        let array_index = node_index.as_array_index() / (LocalNodeCoords::<LEVEL>::size() as usize);
 
         let result;
         match LEVEL {
@@ -70,8 +68,8 @@ impl LinearBitOctree {
     }
 
     /// Sets all of the bits in the node to the given value
-    pub fn set<const LEVEL: u8>(&mut self, section: LocalNodeIndex<LEVEL>, value: bool) {
-        let array_index = section.as_array_index_unscaled();
+    pub fn set<const LEVEL: u8>(&mut self, node_index: LocalNodeIndex<LEVEL>, value: bool) {
+        let array_index = node_index.as_array_index() / (LocalNodeCoords::<LEVEL>::size() as usize);
 
         match LEVEL {
             0 => {

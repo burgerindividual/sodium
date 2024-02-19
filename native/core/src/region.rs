@@ -14,8 +14,13 @@ pub const SECTIONS_IN_REGION: usize = 8 * 4 * 8;
 pub const REGION_COORD_SHIFT: u8x3 = Simd::from_array([3, 2, 3]);
 pub const REGION_MASK: u8x3 = Simd::from_array([0b11111000, 0b11111100, 0b11111000]);
 
+pub const GRAPH_REGION_DIMENSIONS: u8x3 =
+    from_xyz::<u8>((256 / 8) as u8, (256 / 4) as u8, (256 / 8) as u8);
+
 // the graph should be region-aligned, so this should always hold true
-pub const REGIONS_IN_GRAPH: usize = (256 / 8) * (256 / 4) * (256 / 8);
+pub const REGIONS_IN_GRAPH: usize = GRAPH_REGION_DIMENSIONS.as_array()[0] as usize
+    * GRAPH_REGION_DIMENSIONS.as_array()[1] as usize
+    * GRAPH_REGION_DIMENSIONS.as_array()[2] as usize;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
@@ -159,9 +164,11 @@ impl StagingRegionRenderLists {
     pub fn touch_region(
         &mut self,
         coord_context: &LocalCoordContext,
-        local_section_coord: LocalNodeCoords<0>,
+        local_section_coords: LocalNodeCoords<0>,
+        axis_wrap_directions: Mask<i8, 3>,
     ) -> &mut RegionRenderList {
-        let local_region_index = LocalRegionIndex::from_local_section(local_section_coord);
+        // TODO: account for wrapping here
+        let local_region_index = LocalRegionIndex::from_local_section(local_section_coords);
         let region_render_list = unsafe {
             unwrap_debug!(self
                 .region_render_lists
@@ -169,7 +176,11 @@ impl StagingRegionRenderLists {
         };
 
         let global_region_coords = coord_context.origin_global_region_offset
-            + ((local_section_coord.into_raw() & REGION_MASK) >> REGION_COORD_SHIFT).cast::<i32>();
+            + ((local_section_coords.into_raw() & REGION_MASK) >> REGION_COORD_SHIFT).cast::<i32>()
+            + axis_wrap_directions.cast::<i32>().select(
+                coord_context.region_overflow_offset,
+                coord_context.region_underflow_offset,
+            );
 
         // we only want to add the region on the first encounter of the region to get
         // the correct render order

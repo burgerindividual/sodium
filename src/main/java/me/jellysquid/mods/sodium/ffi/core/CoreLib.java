@@ -1,7 +1,6 @@
 package me.jellysquid.mods.sodium.ffi.core;
 
 import org.joml.FrustumIntersection;
-import org.joml.Vector3d;
 import org.joml.Vector4f;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.Library;
@@ -78,6 +77,8 @@ public class CoreLib {
     }
 
     public static void init() {
+        Library.loadSystem("me.jellysquid.mods.sodium", "natives/libsodium_core.so");
+
         CoreLib.initAllocator(MemoryUtil.getAllocator());
         CoreLib.initPanicHandler();
     }
@@ -135,8 +136,4 @@ public class CoreLib {
      * The pointer provided is invalid after calling this method.
      */
     public static native void graphDelete(long pGraph);
-
-    static {
-        Library.loadSystem("me.jellysquid.mods.sodium", "natives/libsodium_core.so");
-    }
 }

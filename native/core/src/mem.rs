@@ -1,3 +1,5 @@
+use alloc::alloc::alloc;
+use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
 
@@ -170,5 +172,18 @@ impl<T: Default> InitDefaultInPlace for &&*mut T {
             // todo: can this ever be unaligned if it's always writing to field entries?
             self.write(T::default());
         }
+    }
+}
+
+pub fn default_boxed<T>() -> Box<T>
+where
+    *mut T: InitDefaultInPlace,
+{
+    unsafe {
+        let uninit = alloc(Layout::new::<T>()) as *mut T;
+
+        uninit.init_default_in_place();
+
+        Box::from_raw(uninit)
     }
 }

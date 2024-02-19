@@ -31,8 +31,14 @@ pub struct LocalCoordContext {
     pub iter_start_index: LocalNodeIndex<3>,
     pub level_3_node_iter_counts: LocalNodeCoords<3>,
     pub iter_start_section_coords: LocalNodeCoords<0>,
-    pub iter_overflow_offset: f32x3,
-    pub iter_underflow_offset: f32x3,
+    pub block_overflow_offset: f32x3,
+    pub block_underflow_offset: f32x3,
+
+    pub axis_can_overflow_mask: Mask<i8, 3>,
+    pub axis_can_underflow_mask: Mask<i8, 3>,
+
+    pub region_overflow_offset: i32x3,
+    pub region_underflow_offset: i32x3,
 }
 
 impl LocalCoordContext {
@@ -86,8 +92,11 @@ impl LocalCoordContext {
             - i32x3::splat(section_view_distance as i32);
         iter_start_section_coords_tmp[Y] = world_bottom_section_y as i32;
 
-        let iter_underflow = iter_start_section_coords_tmp.simd_lt(i32x3::splat(0));
-        let iter_underflow_offset = iter_underflow.select(f32x3::splat(-4096.0), f32x3::splat(0.0));
+        let axis_can_underflow_mask = iter_start_section_coords_tmp.simd_lt(i32x3::splat(0));
+        let block_underflow_offset =
+            axis_can_underflow_mask.select(f32x3::splat(-4096.0), f32x3::splat(0.0));
+        let region_underflow_offset = axis_can_underflow_mask
+            .select(-(GRAPH_REGION_DIMENSIONS.cast::<i32>()), i32x3::splat(0));
 
         let iter_start_node_coords =
             LocalNodeCoords::<0>::from_raw(iter_start_section_coords_tmp.cast::<u8>())
@@ -109,9 +118,12 @@ impl LocalCoordContext {
             + u8x3::from_xyz(view_cube_length, world_height, view_cube_length).cast::<i32>();
 
         // cannot overflow if the axis is already underflowing
-        let iter_overflow_offset = (iter_end_section_coords_tmp.simd_gt(Simd::splat(255))
-            & !iter_underflow)
-            .select(f32x3::splat(4096.0), f32x3::splat(0.0));
+        let axis_can_overflow_mask =
+            iter_end_section_coords_tmp.simd_gt(Simd::splat(255)) & !axis_can_underflow_mask;
+        let block_overflow_offset =
+            axis_can_overflow_mask.select(f32x3::splat(4096.0), f32x3::splat(0.0));
+        let region_overflow_offset =
+            axis_can_overflow_mask.select(GRAPH_REGION_DIMENSIONS.cast::<i32>(), i32x3::splat(0));
 
         // the add is done to make sure we round up during truncation
         let level_3_node_iter_counts = (LocalNodeCoords::<0>::from_raw(
@@ -135,19 +147,22 @@ impl LocalCoordContext {
             iter_start_index,
             level_3_node_iter_counts,
             iter_start_section_coords,
-            iter_overflow_offset,
-            iter_underflow_offset,
+            block_overflow_offset,
+            block_underflow_offset,
+            axis_can_overflow_mask: axis_can_overflow_mask.cast::<i8>(),
+            axis_can_underflow_mask: axis_can_underflow_mask.cast::<i8>(),
+            region_overflow_offset,
+            region_underflow_offset,
         }
     }
 
-    // TODO: clean
     pub fn test_node<const LEVEL: u8>(
         &self,
         local_node_index: LocalNodeIndex<LEVEL>,
     ) -> BoundsCheckResult {
-        let local_node_coords = local_node_index.unpack();
+        let local_section_coords = local_node_index.unpack_section();
 
-        let bounds = self.node_get_local_bounds(local_node_coords);
+        let bounds = self.node_get_local_bounds::<LEVEL>(local_section_coords);
 
         let mut result = self.bounds_inside_fog::<LEVEL>(&bounds);
 
@@ -156,7 +171,7 @@ impl LocalCoordContext {
         }
 
         if result != BoundsCheckResult::Outside {
-            result = result.combine(self.bounds_inside_world_height(local_node_coords));
+            result = result.combine(self.bounds_inside_world_height::<LEVEL>(local_section_coords));
         }
 
         result
@@ -164,9 +179,9 @@ impl LocalCoordContext {
 
     fn bounds_inside_world_height<const LEVEL: u8>(
         &self,
-        local_node_coords: LocalNodeCoords<LEVEL>,
+        local_section_coords: LocalNodeCoords<0>,
     ) -> BoundsCheckResult {
-        let node_min_y = (local_node_coords.y() as u32) << LEVEL;
+        let node_min_y = local_section_coords.y() as u32;
         let node_max_y = node_min_y + (1 << LEVEL) - 1;
         let world_min_y = self.world_bottom_section_y as u32;
         let world_max_y = self.world_top_section_y as u32;
@@ -222,16 +237,15 @@ impl LocalCoordContext {
 
     fn node_get_local_bounds<const LEVEL: u8>(
         &self,
-        local_node_coords: LocalNodeCoords<LEVEL>,
+        local_section_coords: LocalNodeCoords<0>,
     ) -> RelativeBoundingBox {
-        let raw_section_pos = local_node_coords.into_level::<0>().into_raw();
-        let converted_pos = raw_section_pos.cast::<f32>() * Simd::splat(16.0);
+        let converted_pos = local_section_coords.into_raw().cast::<f32>() * Simd::splat(16.0);
 
         let min_pos = converted_pos
-            + raw_section_pos
-                .simd_lt(self.iter_start_section_coords.into_raw())
-                .cast()
-                .select(self.iter_overflow_offset, self.iter_underflow_offset)
+            + self
+                .get_axis_wrap_directions(local_section_coords)
+                .cast::<i32>()
+                .select(self.block_overflow_offset, self.block_underflow_offset)
             - self.camera_coords;
 
         let max_pos = min_pos + Simd::splat((LocalNodeCoords::<LEVEL>::length() * 16) as f32);
@@ -242,16 +256,33 @@ impl LocalCoordContext {
         }
     }
 
+    // true = overflown if axis is capable
+    // false = underflown if axis is capable
+    pub fn get_axis_wrap_directions(
+        &self,
+        local_section_coords: LocalNodeCoords<0>,
+    ) -> Mask<i8, 3> {
+        local_section_coords
+            .into_raw()
+            .simd_lt(self.iter_start_section_coords.into_raw())
+    }
+
     pub fn get_valid_directions(
         &self,
         local_section_coords: LocalNodeCoords<0>,
+        axis_wrap_directions: Mask<i8, 3>,
     ) -> GraphDirectionSet {
+        let axis_wrapped_mask = axis_wrap_directions
+            .select_mask(self.axis_can_overflow_mask, self.axis_can_underflow_mask);
+
         let negative = local_section_coords
             .into_raw()
-            .simd_le(self.camera_section_coords.into_raw());
+            .simd_le(self.camera_section_coords.into_raw())
+            ^ axis_wrapped_mask;
         let positive = local_section_coords
             .into_raw()
-            .simd_ge(self.camera_section_coords.into_raw());
+            .simd_ge(self.camera_section_coords.into_raw())
+            ^ axis_wrapped_mask;
 
         GraphDirectionSet::from(negative.to_bitmask() | (positive.to_bitmask() << 3))
     }

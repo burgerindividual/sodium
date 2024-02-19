@@ -1,6 +1,3 @@
-use alloc::alloc::alloc;
-use alloc::boxed::Box;
-use core::alloc::Layout;
 use core::mem::swap;
 use core::ptr::addr_of_mut;
 
@@ -21,7 +18,7 @@ use crate::region::*;
 
 pub mod flags;
 pub mod local;
-mod octree;
+pub mod octree;
 pub mod visibility;
 
 pub const SECTIONS_IN_GRAPH: usize = 256 * 256 * 256;
@@ -70,7 +67,7 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     //    before.
     // 2. The frustum includes sections that are just barely in view, adding more than half in a
     //    worst-case scenario. This effect becomes more noticeable at smaller render distances.
-    count = (count * 100) / 55;
+    count = (count * 55) / 100;
 
     count
 }
@@ -99,16 +96,6 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new_boxed() -> Box<Self> {
-        unsafe {
-            let uninit = alloc(Layout::new::<Graph>()) as *mut Graph;
-
-            uninit.init_default_in_place();
-
-            Box::from_raw(uninit)
-        }
-    }
-
     pub fn cull_and_sort(
         &mut self,
         coord_context: &LocalCoordContext,
@@ -216,13 +203,16 @@ impl Graph {
                 finished = false;
 
                 let local_section_coords = local_section_index.unpack();
+                let axis_wrap_directions =
+                    coord_context.get_axis_wrap_directions(local_section_coords);
 
                 // we need to touch the region before checking if the node is visible, because
                 // skipping sections can cause the region order to become incorrect
-                let region_render_list = self
-                    .bfs_cached_state
-                    .staging_render_lists
-                    .touch_region(coord_context, local_section_coords);
+                let region_render_list = self.bfs_cached_state.staging_render_lists.touch_region(
+                    coord_context,
+                    local_section_coords,
+                    axis_wrap_directions,
+                );
 
                 let section_incoming_directions_mut = local_section_index
                     .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
@@ -250,7 +240,7 @@ impl Graph {
                     .get_outgoing_directions(section_incoming_directions);
                 section_outgoing_directions.add_all(directions_modifier);
                 section_outgoing_directions &=
-                    coord_context.get_valid_directions(local_section_coords);
+                    coord_context.get_valid_directions(local_section_coords, axis_wrap_directions);
 
                 // use the outgoing directions to get the neighbors that could possibly be
                 // enqueued
@@ -286,10 +276,10 @@ impl Graph {
     }
 
     pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {
-        let local_coord = LocalNodeCoords::from_raw(
+        let local_coord = LocalNodeCoords::<0>::from_raw(
             section_coord.cast::<u8>() + u8x3::from_xyz(0, LocalCoordContext::Y_ADD_SECTIONS, 0),
         );
-        let index = LocalNodeIndex::<0>::pack(local_coord);
+        let index = LocalNodeIndex::pack(local_coord);
 
         // *index.index_array_unchecked_mut(&mut self.section_flag_sets) = flags;
         *index.index_array_unchecked_mut(&mut self.section_visibility_direction_sets) =

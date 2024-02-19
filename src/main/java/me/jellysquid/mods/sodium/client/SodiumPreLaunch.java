@@ -1,5 +1,7 @@
 package me.jellysquid.mods.sodium.client;
 
+import org.slf4j.LoggerFactory;
+
 import me.jellysquid.mods.sodium.client.compatibility.checks.EarlyDriverScanner;
 import me.jellysquid.mods.sodium.client.compatibility.workarounds.Workarounds;
 import me.jellysquid.mods.sodium.ffi.core.CoreLib;
@@ -12,6 +14,13 @@ public class SodiumPreLaunch implements PreLaunchEntrypoint {
         GraphicsAdapterProbe.findAdapters();
         EarlyDriverScanner.scanDrivers();
         Workarounds.init();
+
+        try {
+            LoggerFactory.getLogger("plug").error("plug.");
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+        }
+
         CoreLib.init();
     }
 }

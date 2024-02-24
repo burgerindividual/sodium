@@ -1,0 +1,45 @@
+[package]
+name = "sodium_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.dev]
+opt-level = 0
+panic = "abort"
+lto = "thin"
+debug-assertions = true
+
+[profile.test]
+inherits = "dev"
+
+[profile.release]
+panic = "abort"
+debug = true
+lto = "fat"
+
+[profile.asm]
+inherits = "release"
+lto = "off"
+
+[profile.production]
+inherits = "release"
+lto = "fat"
+debug = false
+strip = "debuginfo"
+
+[dependencies]
+# Using these dependencies directly gives us access to setting features.
+core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features = [
+    "all_lane_counts",
+] }
+std_float = { git = "https://github.com/rust-lang/portable-simd.git" }
+sodium_proc_macros = { path = "../proc_macros" }
+derive_more = { version = "1.0.0-beta.6", default_features = false, features = [
+    "add",
+    "add_assign",
+    "mul",
+    "mul_assign",
+] }

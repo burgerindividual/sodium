@@ -41,10 +41,12 @@ import net.caffeinemc.mods.sodium.client.render.texture.SpriteUtil;
 import net.caffeinemc.mods.sodium.client.render.util.RenderAsserts;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
+import net.caffeinemc.mods.sodium.client.render.viewport.frustum.SimpleFrustum;
 import net.caffeinemc.mods.sodium.client.util.MathUtil;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.caffeinemc.mods.sodium.ffi.core.CoreLib;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -57,7 +59,10 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.joml.FrustumIntersection;
 import org.joml.Vector3dc;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -85,6 +90,8 @@ public class RenderSectionManager {
     private final SortTriggering sortTriggering;
 
     private ChunkJobCollector lastBlockingCollector;
+
+    private final long pGraph;
 
     @NotNull
     private SortedRenderLists renderLists;
@@ -115,6 +122,7 @@ public class RenderSectionManager {
 
         this.renderLists = SortedRenderLists.empty();
         this.occlusionCuller = new OcclusionCuller(Long2ReferenceMaps.unmodifiable(this.sectionByPosition), this.level);
+        this.pGraph = CoreLib.graphCreate();
 
         this.taskLists = new EnumMap<>(ChunkUpdateType.class);
 
@@ -143,9 +151,69 @@ public class RenderSectionManager {
 
         var visitor = new VisibleChunkCollector(frame);
 
-        this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        // this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+
+                // TODO: move all of this to somewhere else
+        long pSearchResults;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            // FIXME: disgusting, figure out a better way to handle this.
+            FrustumIntersection intersection = ((SimpleFrustum) viewport.getFrustum()).frustum;
+            long pFrustum = CoreLib.frustumCreate(stack, intersection, viewport.getTransform());
+            pSearchResults = CoreLib.graphSearch(
+                this.pGraph,
+                pFrustum,
+                searchDistance,
+                (byte) this.level.getMinSection(),
+                (byte) this.level.getMaxSection(),
+                useOcclusionCulling
+            );
+        }
+
+        // Any variable prefixed with a "u" must be treated as unsigned
+        int uRegionCount = MemoryUtil.memGetInt(pSearchResults);
+        // next aligned field is 16 bytes away
+        pSearchResults += 16;
+
+        for (int regionIdx = 0; Integer.compareUnsigned(regionIdx, uRegionCount) < 0; regionIdx++) {
+            // each RegionRenderList is 288 bytes
+            long regionPtrOffset = regionIdx * 288;
+            int regionSectionX = RenderRegion.toChunkX(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset)
+            );
+            int regionSectionY = RenderRegion.toChunkY(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset + 4)
+            );
+            int regionSectionZ = RenderRegion.toChunkZ(
+                MemoryUtil.memGetInt(pSearchResults + regionPtrOffset + 8)
+            );
+            
+            // the region coords are aligned to 16 bytes
+            regionPtrOffset += 16;
+
+            int uSectionCount = MemoryUtil.memGetInt(pSearchResults + regionPtrOffset);
+            for (int sectionIdx = 0; Integer.compareUnsigned(sectionIdx, uSectionCount) < 0; sectionIdx++) {
+                // each RegionSectionIndex is 1 byte, the 4 bytes is to account for the section count
+                long sectionPtrIdx = sectionIdx + 4;
+
+                // TODO: do these in batches of 8 with getLong
+                byte packedSectionCoord = MemoryUtil.memGetByte(pSearchResults + regionPtrOffset + sectionPtrIdx);
+
+                int sectionX = RegionSectionIndex.unpackX(packedSectionCoord) + regionSectionX;
+                int sectionY = RegionSectionIndex.unpackY(packedSectionCoord) + regionSectionY;
+                int sectionZ = RegionSectionIndex.unpackZ(packedSectionCoord) + regionSectionZ;
+
+                long sectionKey = SectionPos.asLong(sectionX, sectionY, sectionZ);
+                RenderSection section = this.sectionByPosition.get(sectionKey);
+
+                if (section != null) {
+                    visitor.visit(section, true);
+                }
+            }
+
+        }
 
         this.renderLists = visitor.createRenderLists();
+        // TODO: figure out a better way to do rebuild lists? does this shit even work?
         this.taskLists = visitor.getRebuildLists();
     }
 
@@ -352,6 +420,10 @@ public class RenderSectionManager {
         } else {
             this.sectionsWithGlobalEntities.add(render);
         }
+
+        CoreLib.graphSetSection(
+                this.pGraph, render.getChunkX(), render.getChunkY(), render.getChunkZ(), render.getVisibilityData()
+        );
     }
 
     private static List<BuilderTaskOutput> filterChunkBuildResults(ArrayList<BuilderTaskOutput> outputs) {
@@ -551,6 +623,8 @@ public class RenderSectionManager {
 
         this.sectionsWithGlobalEntities.clear();
         this.resetRenderLists();
+
+        CoreLib.graphDelete(this.pGraph);
 
         try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
             this.regions.delete(commandList);

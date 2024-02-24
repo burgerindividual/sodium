@@ -65,15 +65,27 @@ public class RenderRegion {
     }
 
     public int getChunkX() {
-        return this.x << REGION_WIDTH_SH;
+        return toChunkX(this.x);
     }
-
+    
     public int getChunkY() {
-        return this.y << REGION_HEIGHT_SH;
+        return toChunkY(this.y);
+    }
+    
+    public int getChunkZ() {
+        return toChunkZ(this.z);
     }
 
-    public int getChunkZ() {
-        return this.z << REGION_LENGTH_SH;
+    public static int toChunkX(int regionX) {
+        return regionX << REGION_WIDTH_SH;
+    }
+
+    public static int toChunkY(int regionY) {
+        return regionY << REGION_HEIGHT_SH;
+    }
+
+    public static int toChunkZ(int regionZ) {
+        return regionZ << REGION_LENGTH_SH;
     }
 
     public int getOriginX() {

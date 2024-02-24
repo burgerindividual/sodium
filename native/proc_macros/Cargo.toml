@@ -1,0 +1,15 @@
+[package]
+name = "sodium_proc_macros"
+version = "0.0.1"
+authors = ["burgerguy"]
+description = "proc macros for sodium's rust packages"
+keywords = ["proc_macro"]
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+proc-macro2 = "1.0"
+syn = { version = "2.0", features = ["full"] }

@@ -129,9 +129,9 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
 
             var pMeshData = renderDataStorage.getDataPointer(sectionIndex);
 
-            int chunkX = originX + LocalSectionIndex.unpackX(sectionIndex);
-            int chunkY = originY + LocalSectionIndex.unpackY(sectionIndex);
-            int chunkZ = originZ + LocalSectionIndex.unpackZ(sectionIndex);
+            int chunkX = originX + RegionSectionIndex.unpackX(sectionIndex);
+            int chunkY = originY + RegionSectionIndex.unpackY(sectionIndex);
+            int chunkZ = originZ + RegionSectionIndex.unpackZ(sectionIndex);
 
             // The bit field of "visible" geometry sets which should be rendered
             int slices;

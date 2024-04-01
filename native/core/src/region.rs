@@ -1,6 +1,6 @@
 use core::ptr::addr_of_mut;
 
-use core_simd::simd::*;
+use core_simd::simd::prelude::*;
 use sodium_proc_macros::InitDefaultInPlace;
 
 use crate::collections::CInlineVec;

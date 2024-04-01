@@ -1,9 +1,9 @@
-use core_simd::simd::*;
+use core_simd::simd::prelude::*;
 use derive_more::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use super::Coords3;
 use crate::graph::{GraphDirection, SECTIONS_IN_GRAPH};
-use crate::math::{u8x3, ToBitMaskExtended};
+use crate::math::u8x3;
 use crate::unwrap_debug;
 
 #[derive(
@@ -124,7 +124,7 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
         let morton_packed = unsafe {
             Mask::<i8, 24>::from_int_unchecked(expanded_morton_bits.cast::<i8>() >> Simd::splat(7))
         }
-        .to_bitmask();
+        .to_bitmask() as u32;
 
         Self(morton_packed)
     }

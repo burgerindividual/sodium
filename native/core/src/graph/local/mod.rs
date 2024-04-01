@@ -2,12 +2,9 @@ pub mod coord;
 
 use core::mem::transmute;
 
-use core_simd::simd::*;
-use std_float::StdFloat;
+use core_simd::simd::prelude::*;
 
-use crate::graph::local::coord::LocalNodeIndex;
 use crate::graph::*;
-use crate::region::REGION_COORD_SHIFT;
 
 pub struct LocalCoordContext {
     frustum: LocalFrustum,
@@ -216,11 +213,8 @@ impl LocalCoordContext {
         // combine operations and single out the XZ lanes on both extrema from here.
         // also, we don't have to subtract from the camera pos because the bounds are
         // already relative to it
-        let axis_distances = simd_swizzle!(
-            closest_in_chunk,
-            furthest_in_chunk,
-            [First(X), Second(X), First(Z), Second(Z)]
-        );
+        let axis_distances =
+            simd_swizzle!(closest_in_chunk, furthest_in_chunk, [X, 3 + X, Z, 3 + Z]);
         let axis_distances_squared = axis_distances * axis_distances;
 
         // add Xs and Zs
@@ -288,7 +282,7 @@ impl LocalCoordContext {
             .simd_ge(self.camera_section_coords.into_raw())
             ^ axis_wrapped_mask;
 
-        GraphDirectionSet::from(negative.to_bitmask() | (positive.to_bitmask() << 3))
+        GraphDirectionSet::from(negative.to_bitmask() as u8 | (positive.to_bitmask() << 3) as u8)
     }
 }
 

@@ -1,8 +1,7 @@
 use core::mem::transmute;
 use core::ops::{BitAnd, BitAndAssign};
 
-use core_simd::simd::Which::*;
-use core_simd::simd::*;
+use core_simd::simd::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -246,26 +245,13 @@ impl VisibilityData {
         //
         // The extension to power-of-2 vectors makes the reduction produce better
         // codegen.
+        #[rustfmt::skip]
         let outgoing_bits = simd_swizzle!(
             row_comparison,
             col_comparison,
             [
-                First(0),
-                First(1),
-                First(2),
-                First(3),
-                First(4),
-                First(4),
-                First(4),
-                First(4),
-                Second(0),
-                Second(1),
-                Second(2),
-                Second(3),
-                Second(4),
-                Second(4),
-                Second(4),
-                Second(4),
+                0, 1, 2, 3, 4, 4, 4, 4,
+                5, 6, 7, 8, 9, 9, 9, 9,
             ]
         )
         .reduce_or() as u8; // & !incoming // the bitwise and here doesn't seem to be necessary

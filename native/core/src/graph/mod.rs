@@ -1,9 +1,7 @@
 use core::mem::swap;
 use core::ptr::addr_of_mut;
 
-use core_simd::simd::Which::*;
-use core_simd::simd::*;
-use local::LocalCoordContext;
+use core_simd::simd::prelude::*;
 use sodium_proc_macros::InitDefaultInPlace;
 
 use self::coord::LocalNodeCoords;

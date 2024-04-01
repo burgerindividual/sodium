@@ -35,7 +35,6 @@ strip = "debuginfo"
 core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features = [
     "all_lane_counts",
 ] }
-std_float = { git = "https://github.com/rust-lang/portable-simd.git" }
 sodium_proc_macros = { path = "../proc_macros" }
 derive_more = { version = "1.0.0-beta.6", default_features = false, features = [
     "add",
@@ -43,3 +42,4 @@ derive_more = { version = "1.0.0-beta.6", default_features = false, features = [
     "mul",
     "mul_assign",
 ] }
+crash-handler = "0.6.1"

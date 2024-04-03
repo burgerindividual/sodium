@@ -305,6 +305,7 @@ impl LocalFrustum {
         }
     }
 
+    #[no_mangle]
     pub fn test_local_bounding_box(&self, bb: RelativeBoundingBox) -> BoundsCheckResult {
         unsafe {
             // These unsafe mask shenanigans just check if the sign bit is set for each

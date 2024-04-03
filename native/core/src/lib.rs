@@ -4,6 +4,8 @@
 #![feature(fn_ptr_trait)]
 // get rid of this when StdFloat doesn't rely on std
 #![feature(core_intrinsics)]
+#![feature(link_llvm_intrinsics)]
+#![feature(simd_ffi)]
 // In most cases, we want to have functions and structs laying around
 // that may come in handy in the future
 #![allow(dead_code)]

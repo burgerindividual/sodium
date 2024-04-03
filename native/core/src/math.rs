@@ -1,7 +1,6 @@
 #![allow(non_camel_case_types)]
 
 use core::intrinsics::simd::*;
-use core::ops::{Add, Mul};
 
 use core_simd::simd::prelude::*;
 use core_simd::simd::*;
@@ -108,26 +107,6 @@ where
     }
 }
 
-pub trait FastFma {
-    fn fast_fma(self, a: Self, b: Self) -> Self;
-}
-
-impl<const LANES: usize, T: SimdElement> FastFma for Simd<T, LANES>
-where
-    LaneCount<LANES>: SupportedLaneCount,
-    // Self: StdFloat,
-    Self: Mul<Output = Self>,
-    Self: Add<Output = Self>,
-{
-    fn fast_fma(self, a: Self, b: Self) -> Self {
-        if cfg!(target_feature = "fma") {
-            unsafe { simd_fma(self, a, b) }
-        } else {
-            self * a + b
-        }
-    }
-}
-
 pub trait RemEuclid {
     fn rem_euclid(self, rhs: Self) -> Self;
 }
@@ -157,10 +136,7 @@ where
 }
 
 pub trait StdFloat: Sized {
-    #[inline]
-    fn mul_add(self, a: Self, b: Self) -> Self {
-        unsafe { simd_fma(self, a, b) }
-    }
+    fn fast_fma(self, y: Self, z: Self) -> Self;
 
     #[inline]
     fn floor(self) -> Self {
@@ -168,5 +144,29 @@ pub trait StdFloat: Sized {
     }
 }
 
-impl<const LANES: usize> StdFloat for Simd<f32, LANES> where LaneCount<LANES>: SupportedLaneCount {}
-impl<const LANES: usize> StdFloat for Simd<f64, LANES> where LaneCount<LANES>: SupportedLaneCount {}
+macro_rules! impl_std_float {
+    ($type:ty, $intrinsic:literal, $fn:ident) => {
+        #[allow(improper_ctypes)]
+        extern "C" {
+            #[link_name = $intrinsic]
+            fn $fn(x: $type, y: $type, z: $type) -> $type;
+        }
+
+        impl StdFloat for $type {
+            #[inline]
+            fn fast_fma(self, y: Self, z: Self) -> Self {
+                unsafe { $fn(self, y, z) }
+            }
+        }
+    };
+}
+
+impl_std_float!(f32x2, "llvm.fmuladd.v2f32", fmuladd_v2f32);
+impl_std_float!(f32x3, "llvm.fmuladd.v3f32", fmuladd_v3f32);
+impl_std_float!(f32x4, "llvm.fmuladd.v4f32", fmuladd_v4f32);
+impl_std_float!(f32x6, "llvm.fmuladd.v6f32", fmuladd_v6f32);
+impl_std_float!(f32x8, "llvm.fmuladd.v8f32", fmuladd_v8f32);
+impl_std_float!(f64x2, "llvm.fmuladd.v2f64", fmuladd_v2f64);
+impl_std_float!(f64x3, "llvm.fmuladd.v3f64", fmuladd_v3f64);
+impl_std_float!(f64x4, "llvm.fmuladd.v4f64", fmuladd_v4f64);
+impl_std_float!(f64x8, "llvm.fmuladd.v8f64", fmuladd_v8f64);

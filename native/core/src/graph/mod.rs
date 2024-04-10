@@ -1,4 +1,3 @@
-use core::mem::swap;
 use core::ptr::addr_of_mut;
 
 use core_simd::simd::prelude::*;
@@ -67,6 +66,9 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
     //    worst-case scenario. This effect becomes more noticeable at smaller render distances.
     count = (count * 55) / 100;
 
+    // Multiply by 2 because a single queue will serve as the read and write queue.
+    count *= 2;
+
     count
 }
 
@@ -74,8 +76,7 @@ pub const fn get_bfs_queue_max_size(section_render_distance: u8, world_height: u
 pub struct BfsCachedState {
     incoming_directions: [GraphDirectionSet; SECTIONS_IN_GRAPH],
     staging_render_lists: StagingRegionRenderLists,
-    queue_1: BfsQueue,
-    queue_2: BfsQueue,
+    queue: BfsQueue,
 }
 
 #[derive(InitDefaultInPlace)]
@@ -179,12 +180,9 @@ impl Graph {
             GraphDirectionSet::ALL
         };
 
-        let mut read_queue_ref = &mut self.bfs_cached_state.queue_1;
-        let mut write_queue_ref = &mut self.bfs_cached_state.queue_2;
-
         // Manually add the secton the camera is in as the section to search from
         let initial_node_index = coord_context.camera_section_index;
-        read_queue_ref.push(initial_node_index);
+        self.bfs_cached_state.queue.push(initial_node_index);
 
         // All incoming directions are set for the first section to make sure we try all
         // of its outgoing directions.
@@ -192,85 +190,72 @@ impl Graph {
             .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions)
             .add_all(GraphDirectionSet::ALL);
 
-        let mut finished = false;
-        // this finishes when the read queue is completely empty.
-        while !finished {
-            finished = true;
+        while let Some(&local_section_index) = self.bfs_cached_state.queue.pop() {
+            let local_section_coords = local_section_index.unpack();
+            let axis_wrap_directions = coord_context.get_axis_wrap_directions(local_section_coords);
 
-            while let Some(&local_section_index) = read_queue_ref.pop() {
-                finished = false;
+            // we need to touch the region before checking if the node is visible, because
+            // skipping sections can cause the region order to become incorrect
+            let region_render_list = self.bfs_cached_state.staging_render_lists.touch_region(
+                coord_context,
+                local_section_coords,
+                axis_wrap_directions,
+            );
 
-                let local_section_coords = local_section_index.unpack();
-                let axis_wrap_directions =
-                    coord_context.get_axis_wrap_directions(local_section_coords);
+            let section_incoming_directions_mut = local_section_index
+                .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
+            let section_incoming_directions = *section_incoming_directions_mut;
+            // clear the incoming directions for the next time this is called
+            *section_incoming_directions_mut = GraphDirectionSet::NONE;
 
-                // we need to touch the region before checking if the node is visible, because
-                // skipping sections can cause the region order to become incorrect
-                let region_render_list = self.bfs_cached_state.staging_render_lists.touch_region(
-                    coord_context,
-                    local_section_coords,
-                    axis_wrap_directions,
-                );
-
-                let section_incoming_directions_mut = local_section_index
-                    .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
-                let section_incoming_directions = *section_incoming_directions_mut;
-                // clear the incoming directions for the next time this is called
-                *section_incoming_directions_mut = GraphDirectionSet::NONE;
-
-                if !self
-                    .frustum_fog_cached_state
-                    .section_is_visible_bits
-                    .get_and_clear(local_section_index)
-                {
-                    // skip node
-                    continue;
-                }
-
-                // let section_flags =
-                // *node_index.index_array_unchecked(&self.section_flag_sets);
-                region_render_list.add_section(local_section_coords);
-
-                // use incoming directions to determine outgoing directions, given the
-                // visibility bits set
-                let mut section_outgoing_directions = local_section_index
-                    .index_array_unchecked(&self.section_visibility_direction_sets)
-                    .get_outgoing_directions(section_incoming_directions);
-                section_outgoing_directions.add_all(directions_modifier);
-                section_outgoing_directions &=
-                    coord_context.get_valid_directions(local_section_coords, axis_wrap_directions);
-
-                // use the outgoing directions to get the neighbors that could possibly be
-                // enqueued
-                let section_neighbor_indices = local_section_index.get_all_neighbors();
-
-                for current_outgoing_direction in section_outgoing_directions {
-                    let neighbor_index = section_neighbor_indices.get(current_outgoing_direction);
-
-                    // the outgoing direction for the current node is the incoming direction for the
-                    // neighbor
-                    let current_incoming_direction = current_outgoing_direction.opposite();
-
-                    let neighbor_incoming_directions = neighbor_index
-                        .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
-
-                    // enqueue only if the node has not yet been enqueued, avoiding duplicates
-                    let should_enqueue = neighbor_incoming_directions.is_empty();
-
-                    neighbor_incoming_directions.add(current_incoming_direction);
-
-                    write_queue_ref.push_conditionally(neighbor_index, should_enqueue);
-                }
+            if !self
+                .frustum_fog_cached_state
+                .section_is_visible_bits
+                .get_and_clear(local_section_index)
+            {
+                // skip node
+                continue;
             }
 
-            // we need to reset the read queue because, even though there are no elements left, we
-            // want to set the head and tail pointers to the start of the array.
-            read_queue_ref.reset();
-            swap(&mut read_queue_ref, &mut write_queue_ref);
+            // let section_flags =
+            // *node_index.index_array_unchecked(&self.section_flag_sets);
+            region_render_list.add_section(local_section_coords);
+
+            // use incoming directions to determine outgoing directions, given the
+            // visibility bits set
+            let mut section_outgoing_directions = local_section_index
+                .index_array_unchecked(&self.section_visibility_direction_sets)
+                .get_outgoing_directions(section_incoming_directions);
+            section_outgoing_directions.add_all(directions_modifier);
+            section_outgoing_directions &=
+                coord_context.get_valid_directions(local_section_coords, axis_wrap_directions);
+
+            // use the outgoing directions to get the neighbors that could possibly be
+            // enqueued
+            let section_neighbor_indices = local_section_index.get_all_neighbors();
+
+            for current_outgoing_direction in section_outgoing_directions {
+                let neighbor_index = section_neighbor_indices.get(current_outgoing_direction);
+
+                // the outgoing direction for the current node is the incoming direction for the
+                // neighbor
+                let current_incoming_direction = current_outgoing_direction.opposite();
+
+                let neighbor_incoming_directions = neighbor_index
+                    .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions);
+
+                // enqueue only if the node has not yet been enqueued, avoiding duplicates
+                let should_enqueue = neighbor_incoming_directions.is_empty();
+
+                neighbor_incoming_directions.add(current_incoming_direction);
+
+                self.bfs_cached_state
+                    .queue
+                    .push_conditionally(neighbor_index, should_enqueue);
+            }
         }
 
-        self.bfs_cached_state.queue_1.reset();
-        self.bfs_cached_state.queue_2.reset();
+        self.bfs_cached_state.queue.reset();
     }
 
     pub fn set_section(&mut self, section_coord: i32x3, visibility_data: VisibilityData) {

@@ -32,7 +32,7 @@ strip = "debuginfo"
 
 [dependencies]
 # Using these dependencies directly gives us access to setting features.
-core_simd = { git = "https://github.com/rust-lang/portable-simd.git", features = [
+core_simd = { git = "https://github.com/burgerindividual/portable-simd.git", features = [
     "all_lane_counts",
 ] }
 sodium_proc_macros = { path = "../proc_macros" }

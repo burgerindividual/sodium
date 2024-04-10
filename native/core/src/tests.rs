@@ -151,3 +151,143 @@ fn bit_octree_get_set() {
 
     assert!(!bit_octree.get_and_clear(node_index));
 }
+
+#[test]
+fn morten_cube() {
+    for x in 0..4 {
+        for y in 0..4 {
+            for z in 0..4 {
+                let index =
+                    LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z)).as_array_index();
+                print!("{: >3}", index);
+            }
+            println!();
+        }
+        println!();
+    }
+}
+
+#[test]
+fn morten_cube_shift() {
+    const AXIS_LENGTH: u8 = 4;
+
+    println!("------------------------------");
+    println!("SHIFT NEGATIVE X:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if x == 0 {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x - 1, y, z))
+                        .as_array_index() as isize;
+                    print!("{: >3}", initial_idx - new_idx);
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!("------------------------------");
+    println!("SHIFT POSITIVE X:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if x == (AXIS_LENGTH - 1) {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x + 1, y, z))
+                        .as_array_index() as isize;
+                    print!("{: >3}", -(initial_idx - new_idx));
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!("------------------------------");
+    println!("SHIFT NEGATIVE Y:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if y == 0 {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y - 1, z))
+                        .as_array_index() as isize;
+                    print!("{: >3}", initial_idx - new_idx);
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!("------------------------------");
+    println!("SHIFT POSITIVE Y:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if y == (AXIS_LENGTH - 1) {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y + 1, z))
+                        .as_array_index() as isize;
+                    print!("{: >3}", -(initial_idx - new_idx));
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!("------------------------------");
+    println!("SHIFT NEGATIVE Z:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if z == 0 {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z - 1))
+                        .as_array_index() as isize;
+                    print!("{: >3}", initial_idx - new_idx);
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!("------------------------------");
+    println!("SHIFT POSITIVE Z:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z))
+                    .as_array_index() as isize;
+                if z == (AXIS_LENGTH - 1) {
+                    print!("  X");
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z + 1))
+                        .as_array_index() as isize;
+                    print!("{: >3}", -(initial_idx - new_idx));
+                }
+            }
+            println!();
+        }
+        println!();
+    }
+}

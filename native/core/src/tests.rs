@@ -2,6 +2,9 @@
 
 use std::collections::HashSet;
 
+use core_simd::simd::num::SimdUint;
+use core_simd::simd::Simd;
+
 use crate::graph::local::coord::{LocalNodeCoords, LocalNodeIndex};
 use crate::graph::octree::LinearBitOctree;
 use crate::graph::visibility::GraphDirection;
@@ -153,7 +156,7 @@ fn bit_octree_get_set() {
 }
 
 #[test]
-fn morten_cube() {
+fn morton_cube() {
     for x in 0..4 {
         for y in 0..4 {
             for z in 0..4 {
@@ -168,7 +171,7 @@ fn morten_cube() {
 }
 
 #[test]
-fn morten_cube_shift() {
+fn morton_cube_shift_visual() {
     const AXIS_LENGTH: u8 = 4;
 
     println!("------------------------------");
@@ -285,6 +288,167 @@ fn morten_cube_shift() {
                         .as_array_index() as isize;
                     print!("{: >3}", -(initial_idx - new_idx));
                 }
+            }
+            println!();
+        }
+        println!();
+    }
+}
+
+#[test]
+fn morton_cube_shift() {
+    const AXIS_LENGTH: u8 = 4;
+    const FILLER: String = String::new();
+    let mut array = [FILLER; 64];
+
+    println!("------------------------------");
+    println!("SHIFT NEGATIVE Z:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx =
+                    LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z)).as_array_index();
+                if z == 0 {
+                    array[initial_idx].push('*');
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z - 1))
+                        .as_array_index();
+                    array[initial_idx].push_str(&new_idx.to_string());
+                }
+            }
+        }
+    }
+
+    for str in &mut array {
+        print!("{str}, ");
+        str.clear();
+    }
+    println!();
+
+    println!("------------------------------");
+    println!("SHIFT POSITIVE Z:");
+    for x in 0..AXIS_LENGTH {
+        for y in 0..AXIS_LENGTH {
+            for z in 0..AXIS_LENGTH {
+                let initial_idx =
+                    LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z)).as_array_index();
+                if z == (AXIS_LENGTH - 1) {
+                    array[initial_idx].push('*');
+                } else {
+                    let new_idx = LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z + 1))
+                        .as_array_index();
+                    array[initial_idx].push_str(&new_idx.to_string());
+                }
+            }
+        }
+    }
+
+    for str in &array {
+        print!("{str}, ");
+    }
+    println!();
+}
+
+#[test]
+fn morton_cube_bfs_scalar() {
+    let mut bit_array = 0_u64;
+
+    bit_array |=
+        1 << LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(1, 2, 2)).as_array_index();
+
+    // negative X
+    let bit_array_nx =
+        ((bit_array & 0x0f0f0f0f00000000) >> 28) | ((bit_array & 0xf0f0f0f0f0f0f0f0) >> 4);
+    // negative Y
+    let bit_array_ny =
+        ((bit_array & 0x3333000033330000) >> 14) | ((bit_array & 0xcccccccccccccccc) >> 2);
+    // negative Z
+    let bit_array_nz =
+        ((bit_array & 0x5500550055005500) >> 7) | ((bit_array & 0xaaaaaaaaaaaaaaaa) >> 1);
+    // positive X
+    let bit_array_px =
+        ((bit_array & 0x0f0f0f0f0f0f0f0f) << 4) | ((bit_array & 0x00000000f0f0f0f0) << 28);
+    // positive Y
+    let bit_array_py =
+        ((bit_array & 0x3333333333333333) << 2) | ((bit_array & 0x0000cccc0000cccc) << 14);
+    // positive Z
+    let bit_array_pz =
+        ((bit_array & 0x5555555555555555) << 1) | ((bit_array & 0x00aa00aa00aa00aa) << 7);
+
+    bit_array |= bit_array_ny;
+    bit_array |= bit_array_py;
+    bit_array |= bit_array_nx;
+    bit_array |= bit_array_px;
+    bit_array |= bit_array_nz;
+    bit_array |= bit_array_pz;
+
+    for x in 0..4 {
+        for y in 0..4 {
+            for z in 0..4 {
+                let index =
+                    LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z)).as_array_index();
+                print!("{: >3}", (bit_array >> index) & 0b1);
+            }
+            println!();
+        }
+        println!();
+    }
+}
+
+#[test]
+fn morton_cube_bfs_vector() {
+    let mut bit_array = 0_u64;
+
+    bit_array |=
+        1 << LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(1, 2, 2)).as_array_index();
+
+    let bit_array_vec = Simd::<u64, 12>::splat(bit_array);
+    let shifted_bit_arrays = ((bit_array_vec
+        & Simd::from_array([
+            // -X
+            0x0f0f0f0f00000000,
+            0xf0f0f0f0f0f0f0f0,
+            // -Y
+            0x3333000033330000,
+            0xcccccccccccccccc,
+            // -Z
+            0x5500550055005500,
+            0xaaaaaaaaaaaaaaaa,
+            // +X
+            0x0f0f0f0f0f0f0f0f,
+            0x00000000f0f0f0f0,
+            // +Y
+            0x3333333333333333,
+            0x0000cccc0000cccc,
+            // +Z
+            0x5555555555555555,
+            0x00aa00aa00aa00aa,
+        ]))
+        >> Simd::from_array([
+            28, 4, // -X
+            14, 2, // -Y
+            7, 1, // -Z
+            0, 0, // +X
+            0, 0, // +Y
+            0, 0, // +Z
+        ]))
+        << Simd::from_array([
+            0, 0, // -X
+            0, 0, // -Y
+            0, 0, // -Z
+            4, 28, // +X
+            2, 14, // +Y
+            1, 7, // +Z
+        ]);
+
+    bit_array |= shifted_bit_arrays.reduce_or();
+
+    for x in 0..4 {
+        for y in 0..4 {
+            for z in 0..4 {
+                let index =
+                    LocalNodeIndex::pack(LocalNodeCoords::<0>::from_xyz(x, y, z)).as_array_index();
+                print!("{: >3}", (bit_array >> index) & 0b1);
             }
             println!();
         }

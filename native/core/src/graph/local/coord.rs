@@ -134,7 +134,7 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
         // each element is still has its individual bits in morton ordering, but the
         // bytes in the vector are in linear ordering.
         #[rustfmt::skip]
-        let expanded_linear_bits = simd_swizzle!(
+        let expanded_morton_bits = simd_swizzle!(
             u8x4::from_array(self.0.to_le_bytes()),
             [
                 // X
@@ -162,7 +162,7 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
 
         // shift each bit into the sign bit for morton ordering
         #[rustfmt::skip]
-        let expanded_morton_bits = expanded_linear_bits << Simd::<u8, 24>::from_array(
+        let expanded_linear_bits = expanded_morton_bits << Simd::<u8, 24>::from_array(
             [
                 // X
                 // LSB
@@ -190,7 +190,7 @@ impl<const LEVEL: u8> LocalNodeIndex<LEVEL> {
         // arithmetic shift to set each whole lane to its sign bit, then shrinking all
         // lanes to bitmask
         let linear_packed = unsafe {
-            Mask::<i8, 24>::from_int_unchecked(expanded_morton_bits.cast::<i8>() >> Simd::splat(7))
+            Mask::<i8, 24>::from_int_unchecked(expanded_linear_bits.cast::<i8>() >> Simd::splat(7))
         }
         .to_bitmask();
 

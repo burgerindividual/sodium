@@ -153,7 +153,7 @@ impl InitDefaultInPlace for *mut RegionRenderList {
 #[derive(InitDefaultInPlace)]
 pub struct StagingRegionRenderLists {
     ordered_region_indices: CInlineVec<LocalRegionIndex, REGIONS_IN_GRAPH>,
-    region_render_lists: [RegionRenderList; REGIONS_IN_GRAPH as usize],
+    region_render_lists: [RegionRenderList; REGIONS_IN_GRAPH],
 }
 
 impl StagingRegionRenderLists {

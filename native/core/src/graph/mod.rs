@@ -190,7 +190,7 @@ impl Graph {
             .index_array_unchecked_mut(&mut self.bfs_cached_state.incoming_directions)
             .add_all(GraphDirectionSet::ALL);
 
-        while let Some(&local_section_index) = self.bfs_cached_state.queue.pop() {
+        while let Some(local_section_index) = self.bfs_cached_state.queue.pop() {
             let local_section_coords = local_section_index.unpack();
             let axis_wrap_directions = coord_context.get_axis_wrap_directions(local_section_coords);
 

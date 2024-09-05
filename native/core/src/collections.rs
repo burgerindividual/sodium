@@ -21,7 +21,7 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
     pub fn push_conditionally(&mut self, value: T, cond: bool) {
         self.set_tail_element(value);
 
-        self.tail += if cond { 1 } else { 0 };
+        self.tail += cond as usize;
     }
 
     fn set_tail_element(&mut self, value: T) {
@@ -30,7 +30,7 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
         }
     }
 
-    pub fn pop(&mut self) -> Option<&T> {
+    pub fn pop(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
         }
@@ -39,7 +39,7 @@ impl<T, const CAPACITY: usize> ArrayDeque<T, CAPACITY> {
         // would've already been a problem when we pushed an element past the
         // array.
         let value =
-            unsafe { MaybeUninit::assume_init_ref(unwrap_debug!(self.elements.get(self.head))) };
+            unsafe { MaybeUninit::assume_init_read(unwrap_debug!(self.elements.get(self.head))) };
         self.head += 1;
 
         Some(value)

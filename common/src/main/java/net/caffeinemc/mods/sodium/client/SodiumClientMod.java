@@ -5,7 +5,7 @@ import net.caffeinemc.mods.sodium.client.data.fingerprint.HashedFingerprint;
 import net.caffeinemc.mods.sodium.client.gui.SodiumGameOptions;
 import net.caffeinemc.mods.sodium.client.console.Console;
 import net.caffeinemc.mods.sodium.client.console.message.MessageLevel;
-import net.minecraft.network.chat.Component;
+import net.caffeinemc.mods.sodium.ffi.NativeCull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,6 +27,8 @@ public class SodiumClientMod {
         } catch (Throwable t) {
             LOGGER.error("Failed to update fingerprint", t);
         }
+
+        loadNatives();
     }
 
     public static SodiumGameOptions options() {
@@ -105,6 +107,12 @@ public class SodiumClientMod {
             } catch (IOException e) {
                 LOGGER.error("Failed to update config file", e);
             }
+        }
+    }
+
+    private static void loadNatives() {
+        if (NativeCull.SUPPORTED) {
+            LOGGER.info("Native culling library initialized successfully");
         }
     }
 }

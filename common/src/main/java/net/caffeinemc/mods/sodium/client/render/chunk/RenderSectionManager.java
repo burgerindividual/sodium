@@ -45,6 +45,7 @@ import net.caffeinemc.mods.sodium.client.util.MathUtil;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.caffeinemc.mods.sodium.ffi.NativeCull;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -58,6 +59,8 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3dc;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -99,11 +102,22 @@ public class RenderSectionManager {
     private @Nullable BlockPos cameraBlockPos;
     private @Nullable Vector3dc cameraPosition;
 
+    private long nativeGraphPtr = 0L;
+
     public RenderSectionManager(ClientLevel level, int renderDistance, CommandList commandList) {
         this.chunkRenderer = new DefaultChunkRenderer(RenderDevice.INSTANCE, ChunkMeshFormats.COMPACT);
 
         this.level = level;
-        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT);
+
+        if (NativeCull.SUPPORTED) {
+            this.nativeGraphPtr = NativeCull.graphCreate(
+                    (byte) renderDistance,
+                    (byte) level.getMinSectionY(),
+                    (byte) level.getMaxSectionY()
+            );
+        }
+
+        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT, this.nativeGraphPtr);
 
         this.needsGraphUpdate = true;
         this.renderDistance = renderDistance;
@@ -144,11 +158,35 @@ public class RenderSectionManager {
 
         var visitor = new VisibleChunkCollector(frame);
 
+        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
+            try (var stack = MemoryStack.stackPush()) {
+                var returnValuePtr = stack.ncalloc(8, 16, 1);
+                var cameraPtr = NativeCull.frustumCreate(
+                        stack,
+                        viewport.getFrustumIntersection(),
+                        viewport.getTransform()
+                );
+
+                NativeCull.graphSearch(
+                        returnValuePtr,
+                        this.nativeGraphPtr,
+                        cameraPtr,
+                        searchDistance,
+                        useOcclusionCulling
+                );
+
+
+            }
+        } else {
+//            this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        }
+
         this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
 
         this.renderLists = visitor.createRenderLists(viewport);
         this.taskLists = visitor.getRebuildLists();
     }
+
 
     private float getSearchDistance() {
         float distance;
@@ -209,6 +247,9 @@ public class RenderSectionManager {
 
         this.connectNeighborNodes(renderSection);
 
+        // TODO: consider setting native graph opaque nodes to all 0s for non-built
+        //  sections
+
         // force update to schedule build task
         this.needsGraphUpdate = true;
     }
@@ -235,6 +276,15 @@ public class RenderSectionManager {
         this.updateSectionInfo(section, null);
 
         section.delete();
+
+        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
+            NativeCull.graphRemoveSection(
+                    this.nativeGraphPtr,
+                    x,
+                    y,
+                    z
+            );
+        }
 
         // force update to remove section from render lists
         this.needsGraphUpdate = true;
@@ -553,6 +603,10 @@ public class RenderSectionManager {
         try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
             this.regions.delete(commandList);
             this.chunkRenderer.delete(commandList);
+        }
+
+        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
+            NativeCull.graphDelete(this.nativeGraphPtr);
         }
     }
 

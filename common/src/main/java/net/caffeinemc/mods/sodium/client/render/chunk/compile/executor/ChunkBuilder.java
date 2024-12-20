@@ -46,11 +46,11 @@ public class ChunkBuilder {
 
     private final ChunkBuildContext localContext;
 
-    public ChunkBuilder(ClientLevel level, ChunkVertexType vertexType) {
+    public ChunkBuilder(ClientLevel level, ChunkVertexType vertexType, long nativeGraphPtr) {
         int count = getThreadCount();
 
         for (int i = 0; i < count; i++) {
-            ChunkBuildContext context = new ChunkBuildContext(level, vertexType);
+            ChunkBuildContext context = new ChunkBuildContext(level, vertexType, nativeGraphPtr);
             WorkerRunnable worker = new WorkerRunnable("Chunk Render Task Executor #" + i, context);
 
             Thread thread = new Thread(worker, "Chunk Render Task Executor #" + i);
@@ -62,7 +62,7 @@ public class ChunkBuilder {
 
         LOGGER.info("Started {} worker threads", this.threads.size());
 
-        this.localContext = new ChunkBuildContext(level, vertexType);
+        this.localContext = new ChunkBuildContext(level, vertexType, nativeGraphPtr);
     }
 
     /**

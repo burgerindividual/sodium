@@ -143,12 +143,12 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                             // TODO: disable the visgraph stuff when using native culling
                             occluder.setOpaque(blockPos);
 
-                            // bits are ordered with the bit pattern of "XYZZZZYYYXXX".
+                            // bits are ordered with the bit pattern of "XYZZZZYYY_XXX".
                             int bitIdx = x & 0b111;
                             int byteIdx = y & 0b111;
                             byteIdx |= (z & 0b1111) << 3;
-                            byteIdx |= (y & 0b1000) << 7;
-                            byteIdx |= (x & 0b1000) << 8;
+                            byteIdx |= (y & 0b1000) << 4;
+                            byteIdx |= (x & 0b1000) << 5;
 
                             var blockPointer = opaqueBlocksBuffer + byteIdx;
                             MemoryUtil.memPutByte(
@@ -160,11 +160,9 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                 }
             }
 
-            if (NativeCull.SUPPORTED && buildContext.nativeGraphPtr != 0L) {
-                // FIXME: there's a super duper small chance that this is actually safe, because of the alignment of tiles
-                //  being in separate cache lines, but like. eugh.
-                NativeCull.graphSetSection(
-                        buildContext.nativeGraphPtr,
+            profiler.popPush("native graph");
+            if (NativeCull.SUPPORTED && buildContext.nativeGraph != null) {
+                buildContext.nativeGraph.setSection(
                         this.render.getChunkX(),
                         this.render.getChunkY(),
                         this.render.getChunkZ(),

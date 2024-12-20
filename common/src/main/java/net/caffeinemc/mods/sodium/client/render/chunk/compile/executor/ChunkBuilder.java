@@ -6,6 +6,7 @@ import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.BuilderTaskOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderTask;
+import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.NativeGraph;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexType;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -46,11 +47,11 @@ public class ChunkBuilder {
 
     private final ChunkBuildContext localContext;
 
-    public ChunkBuilder(ClientLevel level, ChunkVertexType vertexType, long nativeGraphPtr) {
+    public ChunkBuilder(ClientLevel level, ChunkVertexType vertexType, NativeGraph nativeGraph) {
         int count = getThreadCount();
 
         for (int i = 0; i < count; i++) {
-            ChunkBuildContext context = new ChunkBuildContext(level, vertexType, nativeGraphPtr);
+            ChunkBuildContext context = new ChunkBuildContext(level, vertexType, nativeGraph);
             WorkerRunnable worker = new WorkerRunnable("Chunk Render Task Executor #" + i, context);
 
             Thread thread = new Thread(worker, "Chunk Render Task Executor #" + i);
@@ -62,7 +63,7 @@ public class ChunkBuilder {
 
         LOGGER.info("Started {} worker threads", this.threads.size());
 
-        this.localContext = new ChunkBuildContext(level, vertexType, nativeGraphPtr);
+        this.localContext = new ChunkBuildContext(level, vertexType, nativeGraph);
     }
 
     /**

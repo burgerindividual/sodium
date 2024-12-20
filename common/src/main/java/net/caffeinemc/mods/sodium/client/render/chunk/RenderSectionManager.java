@@ -25,6 +25,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.VisibleChunkCollector;
 import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.GraphDirection;
+import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.NativeGraph;
 import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
@@ -87,6 +88,8 @@ public class RenderSectionManager {
 
     private final SortTriggering sortTriggering;
 
+    private final NativeGraph nativeGraph;
+
     private ChunkJobCollector lastBlockingCollector;
 
     @NotNull
@@ -102,22 +105,22 @@ public class RenderSectionManager {
     private @Nullable BlockPos cameraBlockPos;
     private @Nullable Vector3dc cameraPosition;
 
-    private long nativeGraphPtr = 0L;
-
     public RenderSectionManager(ClientLevel level, int renderDistance, CommandList commandList) {
         this.chunkRenderer = new DefaultChunkRenderer(RenderDevice.INSTANCE, ChunkMeshFormats.COMPACT);
 
         this.level = level;
 
+        NativeGraph nativeGraph = null;
         if (NativeCull.SUPPORTED) {
-            this.nativeGraphPtr = NativeCull.graphCreate(
+            nativeGraph = new NativeGraph(
                     (byte) renderDistance,
                     (byte) level.getMinSectionY(),
                     (byte) level.getMaxSectionY()
             );
         }
+        this.nativeGraph = nativeGraph;
 
-        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT, this.nativeGraphPtr);
+        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT, this.nativeGraph);
 
         this.needsGraphUpdate = true;
         this.renderDistance = renderDistance;
@@ -158,24 +161,16 @@ public class RenderSectionManager {
 
         var visitor = new VisibleChunkCollector(frame);
 
-        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
+        if (NativeCull.SUPPORTED && this.nativeGraph != null && false) {
             try (var stack = MemoryStack.stackPush()) {
-                var returnValuePtr = stack.ncalloc(8, 16, 1);
-                var cameraPtr = NativeCull.frustumCreate(
+                var resultsPtr = this.nativeGraph.search(
                         stack,
-                        viewport.getFrustumIntersection(),
-                        viewport.getTransform()
-                );
-
-                NativeCull.graphSearch(
-                        returnValuePtr,
-                        this.nativeGraphPtr,
-                        cameraPtr,
+                        viewport,
                         searchDistance,
                         useOcclusionCulling
                 );
 
-
+                // TODO: actually read results
             }
         } else {
 //            this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
@@ -277,13 +272,8 @@ public class RenderSectionManager {
 
         section.delete();
 
-        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
-            NativeCull.graphRemoveSection(
-                    this.nativeGraphPtr,
-                    x,
-                    y,
-                    z
-            );
+        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
+            this.nativeGraph.removeSection(x, y, z);
         }
 
         // force update to remove section from render lists
@@ -605,8 +595,8 @@ public class RenderSectionManager {
             this.chunkRenderer.delete(commandList);
         }
 
-        if (NativeCull.SUPPORTED && this.nativeGraphPtr != 0L) {
-            NativeCull.graphDelete(this.nativeGraphPtr);
+        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
+            this.nativeGraph.close();
         }
     }
 

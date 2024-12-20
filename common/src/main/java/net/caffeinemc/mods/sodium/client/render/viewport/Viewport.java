@@ -1,8 +1,10 @@
 package net.caffeinemc.mods.sodium.client.render.viewport;
 
 import net.caffeinemc.mods.sodium.client.render.viewport.frustum.Frustum;
+import net.caffeinemc.mods.sodium.client.render.viewport.frustum.SimpleFrustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import org.joml.FrustumIntersection;
 import org.joml.Vector3d;
 
 public final class Viewport {
@@ -51,5 +53,10 @@ public final class Viewport {
 
     public BlockPos getBlockCoord() {
         return this.blockCoords;
+    }
+
+    public FrustumIntersection getFrustumIntersection() {
+        // FIXME: this is awful.
+        return ((SimpleFrustum) this.frustum).frustum;
     }
 }

@@ -8,10 +8,12 @@ import net.minecraft.client.multiplayer.ClientLevel;
 public class ChunkBuildContext {
     public final ChunkBuildBuffers buffers;
     public final BlockRenderCache cache;
+    public final long nativeGraphPtr;
 
-    public ChunkBuildContext(ClientLevel level, ChunkVertexType vertexType) {
+    public ChunkBuildContext(ClientLevel level, ChunkVertexType vertexType, long nativeGraphPtr) {
         this.buffers = new ChunkBuildBuffers(vertexType);
         this.cache = new BlockRenderCache(Minecraft.getInstance(), level);
+        this.nativeGraphPtr = nativeGraphPtr;
     }
 
     public void cleanup() {

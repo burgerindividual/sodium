@@ -61,7 +61,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3dc;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -161,7 +160,7 @@ public class RenderSectionManager {
 
         var visitor = new VisibleChunkCollector(frame);
 
-        if (NativeCull.SUPPORTED && this.nativeGraph != null && false) {
+        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
             try (var stack = MemoryStack.stackPush()) {
                 var resultsPtr = this.nativeGraph.search(
                         stack,

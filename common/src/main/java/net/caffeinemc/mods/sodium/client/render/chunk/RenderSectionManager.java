@@ -54,6 +54,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
@@ -161,15 +162,18 @@ public class RenderSectionManager {
         var visitor = new VisibleChunkCollector(frame);
 
         if (NativeCull.SUPPORTED && this.nativeGraph != null) {
-            try (var stack = MemoryStack.stackPush()) {
-                var resultsPtr = this.nativeGraph.search(
-                        stack,
-                        viewport,
-                        searchDistance,
-                        useOcclusionCulling
-                );
+            var player = Minecraft.getInstance().player;
+            if (player != null && player.isHolding(Items.DEBUG_STICK)) {
+                try (var stack = MemoryStack.stackPush()) {
+                    var resultsPtr = this.nativeGraph.search(
+                            stack,
+                            viewport,
+                            searchDistance,
+                            useOcclusionCulling
+                    );
 
-                // TODO: actually read results
+                    // TODO: actually read results
+                }
             }
         } else {
 //            this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);

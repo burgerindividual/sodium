@@ -48,7 +48,7 @@ public class NativeGraph implements Closeable {
         return returnValuePtr;
     }
 
-    public void setSection(int x, int y, int z, long opaqueBlocksBuffer) {
+    public void setSection(int x, int y, int z, long traversableBlocksBuffer) {
         lock.lock();
         try {
             NativeCull.graphSetSection(
@@ -56,7 +56,7 @@ public class NativeGraph implements Closeable {
                     x,
                     y,
                     z,
-                    opaqueBlocksBuffer
+                    traversableBlocksBuffer
             );
         } finally {
             lock.unlock();

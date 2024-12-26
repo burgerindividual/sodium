@@ -155,13 +155,13 @@ public class NativeCull {
     public static native long graphCreate(byte render_distance, byte world_bottom_section_y, byte world_top_section_y);
 
     /**
-     * @param graph_ptr         Rust Type: {@code *mut Graph}
-     * @param x                 Rust Type: {@code i32}
-     * @param y                 Rust Type: {@code i32}
-     * @param z                 Rust Type: {@code i32}
-     * @param opaque_blocks_ptr Rust Type: {@code *const FFISectionOpaqueBlocks}
+     * @param graph_ptr              Rust Type: {@code *mut Graph}
+     * @param x                      Rust Type: {@code i32}
+     * @param y                      Rust Type: {@code i32}
+     * @param z                      Rust Type: {@code i32}
+     * @param traversable_blocks_ptr Rust Type: {@code *const FFISectionOpaqueBlocks}
      */
-    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long opaque_blocks_ptr);
+    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long traversable_blocks_ptr);
 
     /**
      * @param graph_ptr Rust Type: {@code *mut Graph}

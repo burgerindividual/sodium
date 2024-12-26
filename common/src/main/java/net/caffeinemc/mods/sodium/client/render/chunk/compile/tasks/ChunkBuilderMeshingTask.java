@@ -99,7 +99,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         profiler.push("render blocks");
         try (var stack = MemoryStack.stackPush()) {
             // align to 512 bits to allow for faster memory reads.
-            var opaqueBlocksBuffer = stack.ncalloc(64, 512, 1);
+            var traversableBlocksBuffer = stack.ncalloc(64, 512, 1);
 
             for (int y = minY; y < maxY; y++) {
                 if (cancellationToken.isCancelled()) {
@@ -143,7 +143,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                         if (blockState.isSolidRender()) {
                             // TODO: disable the visgraph stuff when using native culling
                             occluder.setOpaque(blockPos);
-
+                        } else {
                             // bits are ordered with the bit pattern of "XYZZZZYYY_XXX".
                             int bitIdx = x & 0b111;
                             int byteIdx = y & 0b111;
@@ -151,7 +151,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                             byteIdx |= (y & 0b1000) << 4;
                             byteIdx |= (x & 0b1000) << 5;
 
-                            var blockPointer = opaqueBlocksBuffer + byteIdx;
+                            var blockPointer = traversableBlocksBuffer + byteIdx;
                             MemoryUtil.memPutByte(
                                     blockPointer,
                                     (byte) (MemoryUtil.memGetByte(blockPointer) | (1 << bitIdx))
@@ -167,7 +167,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                         this.render.getChunkX(),
                         this.render.getChunkY(),
                         this.render.getChunkZ(),
-                        opaqueBlocksBuffer
+                        traversableBlocksBuffer
                 );
             }
         } catch (ReportedException ex) {

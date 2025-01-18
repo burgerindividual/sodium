@@ -200,6 +200,11 @@ public class RenderRegionManager {
         return instance;
     }
 
+    public RenderRegion get(int x, int y, int z) {
+        var key = RenderRegion.key(x, y, z);
+        return this.regions.get(key);
+    }
+
     private record PendingSectionMeshUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload vertexUpload) {
     }
 

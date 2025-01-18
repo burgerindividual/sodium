@@ -24,7 +24,6 @@ import net.caffeinemc.mods.sodium.client.services.PlatformLevelRenderHooks;
 import net.caffeinemc.mods.sodium.client.util.task.CancellationToken;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
-import net.caffeinemc.mods.sodium.ffi.NativeCull;
 import net.minecraft.CrashReport;
 import net.minecraft.CrashReportCategory;
 import net.minecraft.ReportedException;
@@ -40,8 +39,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import org.joml.Vector3dc;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 
 import java.util.Map;
 
@@ -96,15 +93,12 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         blockRenderer.prepare(buffers, slice, collector);
 
         profiler.push("render blocks");
-        try (var stack = MemoryStack.stackPush()) {
-            // align to 512 bits to allow for faster memory reads.
-            var traversableBlocksBuffer = stack.nmalloc(64, 512);
-            MemoryUtil.memSet(traversableBlocksBuffer, 0xFF, 512);
-
+        try {
             for (int y = minY; y < maxY; y++) {
                 if (cancellationToken.isCancelled()) {
                     return null;
                 }
+
                 for (int z = minZ; z < maxZ; z++) {
                     for (int x = minX; x < maxX; x++) {
                         BlockState blockState = slice.getBlockState(x, y, z);
@@ -141,34 +135,10 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                         }
 
                         if (blockState.isSolidRender()) {
-                            // TODO: disable the visgraph stuff when using native culling
                             occluder.setOpaque(blockPos);
-
-                            // bits are ordered with the bit pattern of "XYZZZZYYY_XXX".
-                            int bitIdx = x & 0b111;
-                            int byteIdx = y & 0b111;
-                            byteIdx |= (z & 0b1111) << 3;
-                            byteIdx |= (y & 0b1000) << 4;
-                            byteIdx |= (x & 0b1000) << 5;
-
-                            var blockPointer = traversableBlocksBuffer + byteIdx;
-                            MemoryUtil.memPutByte(
-                                    blockPointer,
-                                    (byte) (MemoryUtil.memGetByte(blockPointer) & ~(1 << bitIdx))
-                            );
                         }
                     }
                 }
-            }
-
-            profiler.popPush("native graph");
-            if (NativeCull.SUPPORTED && buildContext.nativeGraph != null) {
-                buildContext.nativeGraph.setSection(
-                        this.render.getChunkX(),
-                        this.render.getChunkY(),
-                        this.render.getChunkZ(),
-                        traversableBlocksBuffer
-                );
             }
         } catch (ReportedException ex) {
             // Propagate existing crashes (add context)

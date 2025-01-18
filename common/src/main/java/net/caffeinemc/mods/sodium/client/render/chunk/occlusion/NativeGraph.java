@@ -106,13 +106,13 @@ public class NativeGraph implements Closeable {
         }
     }
 
-    public void setSection(int x, int y, int z, long traversableBlocksBuffer) {
+    public void setSection(int x, int y, int z, long visibility_bitmask) {
         NativeCull.graphSetSection(
                 this.nativePtr,
                 x,
                 y,
                 z,
-                traversableBlocksBuffer
+                visibility_bitmask
         );
     }
 

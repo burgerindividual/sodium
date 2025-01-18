@@ -159,9 +159,9 @@ public class NativeCull {
      * @param x                      Rust Type: {@code i32}
      * @param y                      Rust Type: {@code i32}
      * @param z                      Rust Type: {@code i32}
-     * @param visibility_data        Rust Type: {@code u64}
+     * @param visibility_bitmask     Rust Type: {@code u64}
      */
-    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long visibility_data);
+    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long visibility_bitmask);
 
     /**
      * @param return_value_ptr      Rust Type: {@code *mut FFISlice<FFIVisibleSectionsTile>}

@@ -61,7 +61,6 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3dc;
-import org.lwjgl.system.MemoryStack;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -159,32 +158,32 @@ public class RenderSectionManager {
         final var searchDistance = this.getSearchDistance();
         final var useOcclusionCulling = this.shouldUseOcclusionCulling(camera, spectator);
 
+        boolean culled = false;
+
         var visitor = new VisibleChunkCollector(frame);
 
         if (NativeCull.SUPPORTED && this.nativeGraph != null) {
             var player = Minecraft.getInstance().player;
             if (player != null && player.isHolding(Items.DEBUG_STICK)) {
-                try (var stack = MemoryStack.stackPush()) {
-                    var resultsPtr = this.nativeGraph.search(
-                            stack,
-                            viewport,
-                            searchDistance,
-                            useOcclusionCulling
-                    );
-
-                    // TODO: actually read results
-                }
+                this.nativeGraph.findVisible(
+                        visitor,
+                        this.sectionByPosition,
+                        viewport,
+                        searchDistance,
+                        useOcclusionCulling,
+                        frame
+                );
+                culled = true;
             }
-        } else {
-//            this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
         }
 
-        this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        if (!culled) {
+            this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+        }
 
         this.renderLists = visitor.createRenderLists(viewport);
         this.taskLists = visitor.getRebuildLists();
     }
-
 
     private float getSearchDistance() {
         float distance;
@@ -572,7 +571,8 @@ public class RenderSectionManager {
     }
 
     public boolean needsUpdate() {
-        return this.needsGraphUpdate;
+        var player = Minecraft.getInstance().player;
+        return !(player != null && player.isHolding(Items.DIAMOND_HOE));
     }
 
     public ChunkBuilder getBuilder() {

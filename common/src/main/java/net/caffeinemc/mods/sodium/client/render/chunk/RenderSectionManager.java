@@ -108,18 +108,7 @@ public class RenderSectionManager {
         this.chunkRenderer = new DefaultChunkRenderer(RenderDevice.INSTANCE, ChunkMeshFormats.COMPACT);
 
         this.level = level;
-
-        NativeGraph nativeGraph = null;
-        if (NativeCull.SUPPORTED) {
-            nativeGraph = new NativeGraph(
-                    (byte) renderDistance,
-                    (byte) level.getMinSectionY(),
-                    (byte) level.getMaxSectionY()
-            );
-        }
-        this.nativeGraph = nativeGraph;
-
-        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT, this.nativeGraph);
+        this.builder = new ChunkBuilder(level, ChunkMeshFormats.COMPACT);
 
         this.needsGraphUpdate = true;
         this.renderDistance = renderDistance;
@@ -127,6 +116,18 @@ public class RenderSectionManager {
         this.sortTriggering = new SortTriggering();
 
         this.regions = new RenderRegionManager(commandList);
+
+        NativeGraph nativeGraph = null;
+        if (NativeCull.SUPPORTED) {
+            nativeGraph = new NativeGraph(
+                    this.regions,
+                    (byte) renderDistance,
+                    (byte) level.getMinSectionY(),
+                    (byte) level.getMaxSectionY()
+            );
+        }
+        this.nativeGraph = nativeGraph;
+
         this.sectionCache = new ClonedChunkSectionCache(this.level);
 
         this.renderLists = SortedRenderLists.empty();
@@ -167,7 +168,6 @@ public class RenderSectionManager {
             if (player != null && player.isHolding(Items.DEBUG_STICK)) {
                 this.nativeGraph.findVisible(
                         visitor,
-                        this.sectionByPosition,
                         viewport,
                         searchDistance,
                         useOcclusionCulling,
@@ -244,9 +244,6 @@ public class RenderSectionManager {
 
         this.connectNeighborNodes(renderSection);
 
-        // TODO: consider setting native graph opaque nodes to all 0s for non-built
-        //  sections
-
         // force update to schedule build task
         this.needsGraphUpdate = true;
     }
@@ -273,10 +270,6 @@ public class RenderSectionManager {
         this.updateSectionInfo(section, null);
 
         section.delete();
-
-        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
-            this.nativeGraph.removeSection(x, y, z);
-        }
 
         // force update to remove section from render lists
         this.needsGraphUpdate = true;
@@ -390,7 +383,18 @@ public class RenderSectionManager {
     }
 
     private boolean updateSectionInfo(RenderSection render, BuiltSectionInfo info) {
+        var oldVisibilityData = render.getVisibilityData();
         var infoChanged = render.setInfo(info);
+        var newVisibilityData = render.getVisibilityData();
+
+        if (NativeCull.SUPPORTED && this.nativeGraph != null && oldVisibilityData != newVisibilityData) {
+            this.nativeGraph.setSection(
+                    render.getChunkX(),
+                    render.getChunkY(),
+                    render.getChunkZ(),
+                    newVisibilityData
+            );
+        }
 
         if (info == null || ArrayUtils.isEmpty(info.globalBlockEntities)) {
             return this.sectionsWithGlobalEntities.remove(render) || infoChanged;

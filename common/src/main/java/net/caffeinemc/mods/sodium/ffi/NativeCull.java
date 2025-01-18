@@ -159,17 +159,9 @@ public class NativeCull {
      * @param x                      Rust Type: {@code i32}
      * @param y                      Rust Type: {@code i32}
      * @param z                      Rust Type: {@code i32}
-     * @param traversable_blocks_ptr Rust Type: {@code *const FFISectionOpaqueBlocks}
+     * @param visibility_data        Rust Type: {@code u64}
      */
-    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long traversable_blocks_ptr);
-
-    /**
-     * @param graph_ptr Rust Type: {@code *mut Graph}
-     * @param x         Rust Type: {@code i32}
-     * @param y         Rust Type: {@code i32}
-     * @param z         Rust Type: {@code i32}
-     */
-    public static native void graphRemoveSection(long graph_ptr, int x, int y, int z);
+    public static native void graphSetSection(long graph_ptr, int x, int y, int z, long visibility_data);
 
     /**
      * @param return_value_ptr      Rust Type: {@code *mut FFISlice<FFIVisibleSectionsTile>}

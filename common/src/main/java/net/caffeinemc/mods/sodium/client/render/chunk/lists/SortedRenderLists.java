@@ -13,7 +13,7 @@ public class SortedRenderLists implements ChunkRenderListIterable {
 
     private final ObjectArrayList<ChunkRenderList> lists;
 
-    SortedRenderLists(ObjectArrayList<ChunkRenderList> lists) {
+    public SortedRenderLists(ObjectArrayList<ChunkRenderList> lists) {
         this.lists = lists;
     }
 

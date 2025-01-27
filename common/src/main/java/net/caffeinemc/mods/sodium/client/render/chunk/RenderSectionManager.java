@@ -161,28 +161,29 @@ public class RenderSectionManager {
 
         boolean culled = false;
 
-        var visitor = new VisibleChunkCollector(frame);
-
         if (NativeCull.SUPPORTED && this.nativeGraph != null) {
             var player = Minecraft.getInstance().player;
             if (player != null && player.isHolding(Items.DEBUG_STICK)) {
                 this.nativeGraph.findVisible(
-                        visitor,
                         viewport,
                         searchDistance,
                         useOcclusionCulling,
                         frame
                 );
+
+                this.renderLists = this.nativeGraph.createRenderLists(viewport);
+                this.taskLists = this.nativeGraph.getRebuildLists();
+
                 culled = true;
             }
         }
 
         if (!culled) {
+            var visitor = new VisibleChunkCollector(frame);
             this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
+            this.renderLists = visitor.createRenderLists(viewport);
+            this.taskLists = visitor.getRebuildLists();
         }
-
-        this.renderLists = visitor.createRenderLists(viewport);
-        this.taskLists = visitor.getRebuildLists();
     }
 
     private float getSearchDistance(FogParameters fogParameters) {

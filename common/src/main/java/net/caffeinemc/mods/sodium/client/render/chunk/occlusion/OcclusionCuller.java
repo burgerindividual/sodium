@@ -66,7 +66,7 @@ public class OcclusionCuller {
 
                     // occlude paths through the section if it's being viewed at an angle where
                     // the other side can't possibly be seen
-                    sectionVisibilityData &= getAngleVisibilityMask(viewport, section);
+//                    sectionVisibilityData &= getAngleVisibilityMask(viewport, section);
 
                     // When using occlusion culling, we can only traverse into neighbors for which there is a path of
                     // visibility through this chunk. This is determined by taking all the incoming paths to this chunk and
@@ -111,7 +111,8 @@ public class OcclusionCuller {
     }
 
     private static boolean isSectionVisible(RenderSection section, Viewport viewport, float maxDistance) {
-        return isWithinRenderDistance(viewport.getTransform(), section, maxDistance) && isWithinFrustum(viewport, section);
+//        return isWithinRenderDistance(viewport.getTransform(), section, maxDistance) && isWithinFrustum(viewport, section);
+        return isWithinFrustum(viewport, section);
     }
 
     private static void visitNeighbors(final WriteQueue<RenderSection> queue, RenderSection section, int outgoing, int frame) {

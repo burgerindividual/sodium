@@ -46,6 +46,7 @@ import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
 import net.caffeinemc.mods.sodium.ffi.NativeCull;
+import net.caffeinemc.mods.sodium.ffi.NativeFrustum;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -161,11 +162,13 @@ public class RenderSectionManager {
 
         boolean culled = false;
 
-        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
+        if (NativeCull.SUPPORTED && this.nativeGraph != null
+                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum) {
             var player = Minecraft.getInstance().player;
             if (player != null && player.isHolding(Items.DEBUG_STICK)) {
                 this.nativeGraph.findVisible(
-                        viewport,
+                        nativeFrustum,
+                        viewport.getTransform(),
                         searchDistance,
                         useOcclusionCulling,
                         frame

@@ -2,42 +2,46 @@ package net.caffeinemc.mods.sodium.ffi;
 
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
-import org.joml.FrustumIntersection;
-import org.joml.Vector4f;
-import org.lwjgl.system.Library;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.*;
+import oshi.SystemInfo;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
+import java.util.Locale;
+
+import static org.joml.FrustumIntersection.*;
 
 public class NativeCull {
     public static final boolean SUPPORTED;
 
     private static final PanicCallback PANIC_CALLBACK;
 
-    private static final MethodHandle FRUSTUM_PLANES_HANDLE;
-
     static {
         var errorLoading = false;
         PanicCallback panicCallback = null;
-        MethodHandle frustumPlanesHandle = null;
 
         try {
+            var architecture = Platform.getArchitecture();
+            var systemType = String.format(
+                    "%s-%s%s",
+                    Platform.get().getName().toLowerCase(),
+                    architecture.name().toLowerCase(),
+                    getCPUFeatures(architecture)
+            );
+            var nativePath = String.format(
+                    "assets/sodium/natives/%s/%s",
+                    systemType,
+                    System.mapLibraryName("native_cull")
+            );
+
             Library.loadSystem(
                     System::load,
                     System::loadLibrary,
                     NativeCull.class,
                     "",
-                    "assets/sodium/natives/libnative_cull.so"
+                    nativePath
             );
 
             initAllocator();
             panicCallback = initPanicHandler();
-
-            var field = FrustumIntersection.class.getDeclaredField("planes");
-            field.setAccessible(true);
-            frustumPlanesHandle = MethodHandles.lookup().unreflectGetter(field);
         } catch (Throwable t) {
             SodiumClientMod.logger().error("Error loading native culling library", t);
             errorLoading = true;
@@ -45,7 +49,33 @@ public class NativeCull {
 
         SUPPORTED = !errorLoading;
         PANIC_CALLBACK = panicCallback;
-        FRUSTUM_PLANES_HANDLE = frustumPlanesHandle;
+    }
+
+    private static String getCPUFeatures(Platform.Architecture architecture) {
+        if (architecture.equals(Platform.Architecture.X64)) {
+            var cpuFeatureStrings = new SystemInfo().getHardware().getProcessor().getFeatureFlags();
+
+            // Windows does not let us check for the presence of FMA in its API, so we'll just assume it's present if
+            // AVX2 is present. I don't know of any CPUs where this isn't the case
+            var hasAVX2 = false;
+            var hasSSE41 = false;
+            var hasSSSE3 = false;
+
+            for (var cpuFeatureString : cpuFeatureStrings) {
+                var lowercaseFeatureString = cpuFeatureString.toLowerCase();
+                hasAVX2 |= lowercaseFeatureString.contains("avx2");
+                hasSSE41 |= lowercaseFeatureString.contains("sse4_1");
+                hasSSSE3 |= lowercaseFeatureString.contains("ssse3");
+            }
+
+            if (hasAVX2) {
+                return "-avx2+fma";
+            } else if (hasSSE41 && hasSSSE3) {
+                return "-sse4_1+ssse3";
+            }
+        }
+
+        return "";
     }
 
     private static void initAllocator() {
@@ -87,45 +117,49 @@ public class NativeCull {
         }
     }
 
-    public static long frustumCreate(MemoryStack stack, FrustumIntersection frustum, CameraTransform offset) {
+    public static long frustumCreate(MemoryStack stack, NativeFrustum frustum, CameraTransform transform) {
         // alignment and size obtained from rust
         long pFrustum = stack.nmalloc(8, 120);
 
         try {
             // should be faster than normal reflection
-            var planes = (Vector4f[]) FRUSTUM_PLANES_HANDLE.invokeExact(frustum);
+            var planes = frustum.getPlanes();
 
-            MemoryUtil.memPutFloat(pFrustum, planes[0].x);
-            MemoryUtil.memPutFloat(pFrustum + 4, planes[1].x);
-            MemoryUtil.memPutFloat(pFrustum + 8, planes[2].x);
-            MemoryUtil.memPutFloat(pFrustum + 12, planes[3].x);
-            MemoryUtil.memPutFloat(pFrustum + 16, planes[4].x);
-            MemoryUtil.memPutFloat(pFrustum + 20, planes[5].x);
+            // the order of the planes in memory matches the direction order used in the native code
+            // (NEG_X, NEG_Y, NEG_Z, POS_X, POS_Y, POS_Z)
+            MemoryUtil.memPutFloat(pFrustum, planes[PLANE_NX].x);
+            MemoryUtil.memPutFloat(pFrustum + 4, planes[PLANE_NX].y);
+            MemoryUtil.memPutFloat(pFrustum + 8, planes[PLANE_NX].z);
+            MemoryUtil.memPutFloat(pFrustum + 12, planes[PLANE_NX].w);
 
-            MemoryUtil.memPutFloat(pFrustum + 24, planes[0].y);
-            MemoryUtil.memPutFloat(pFrustum + 28, planes[1].y);
-            MemoryUtil.memPutFloat(pFrustum + 32, planes[2].y);
-            MemoryUtil.memPutFloat(pFrustum + 36, planes[3].y);
-            MemoryUtil.memPutFloat(pFrustum + 40, planes[4].y);
-            MemoryUtil.memPutFloat(pFrustum + 44, planes[5].y);
+            MemoryUtil.memPutFloat(pFrustum + 16, planes[PLANE_NY].x);
+            MemoryUtil.memPutFloat(pFrustum + 20, planes[PLANE_NY].y);
+            MemoryUtil.memPutFloat(pFrustum + 24, planes[PLANE_NY].z);
+            MemoryUtil.memPutFloat(pFrustum + 28, planes[PLANE_NY].w);
 
-            MemoryUtil.memPutFloat(pFrustum + 48, planes[0].z);
-            MemoryUtil.memPutFloat(pFrustum + 52, planes[1].z);
-            MemoryUtil.memPutFloat(pFrustum + 56, planes[2].z);
-            MemoryUtil.memPutFloat(pFrustum + 60, planes[3].z);
-            MemoryUtil.memPutFloat(pFrustum + 64, planes[4].z);
-            MemoryUtil.memPutFloat(pFrustum + 68, planes[5].z);
+            MemoryUtil.memPutFloat(pFrustum + 32, planes[PLANE_NZ].x);
+            MemoryUtil.memPutFloat(pFrustum + 36, planes[PLANE_NZ].y);
+            MemoryUtil.memPutFloat(pFrustum + 40, planes[PLANE_NZ].z);
+            MemoryUtil.memPutFloat(pFrustum + 44, planes[PLANE_NZ].w);
 
-            MemoryUtil.memPutFloat(pFrustum + 72, planes[0].w);
-            MemoryUtil.memPutFloat(pFrustum + 76, planes[1].w);
-            MemoryUtil.memPutFloat(pFrustum + 80, planes[2].w);
-            MemoryUtil.memPutFloat(pFrustum + 84, planes[3].w);
-            MemoryUtil.memPutFloat(pFrustum + 88, planes[4].w);
-            MemoryUtil.memPutFloat(pFrustum + 92, planes[5].w);
+            MemoryUtil.memPutFloat(pFrustum + 48, planes[PLANE_PX].x);
+            MemoryUtil.memPutFloat(pFrustum + 52, planes[PLANE_PX].y);
+            MemoryUtil.memPutFloat(pFrustum + 56, planes[PLANE_PX].z);
+            MemoryUtil.memPutFloat(pFrustum + 60, planes[PLANE_PX].w);
 
-            MemoryUtil.memPutDouble(pFrustum + 96, offset.x);
-            MemoryUtil.memPutDouble(pFrustum + 104, offset.y);
-            MemoryUtil.memPutDouble(pFrustum + 112, offset.z);
+            MemoryUtil.memPutFloat(pFrustum + 64, planes[PLANE_PY].x);
+            MemoryUtil.memPutFloat(pFrustum + 68, planes[PLANE_PY].y);
+            MemoryUtil.memPutFloat(pFrustum + 72, planes[PLANE_PY].z);
+            MemoryUtil.memPutFloat(pFrustum + 76, planes[PLANE_PY].w);
+
+            MemoryUtil.memPutFloat(pFrustum + 80, planes[PLANE_PZ].x);
+            MemoryUtil.memPutFloat(pFrustum + 84, planes[PLANE_PZ].y);
+            MemoryUtil.memPutFloat(pFrustum + 88, planes[PLANE_PZ].z);
+            MemoryUtil.memPutFloat(pFrustum + 92, planes[PLANE_PZ].w);
+
+            MemoryUtil.memPutDouble(pFrustum + 96, transform.x);
+            MemoryUtil.memPutDouble(pFrustum + 104, transform.y);
+            MemoryUtil.memPutDouble(pFrustum + 112, transform.z);
         } catch (Throwable t) {
             throw new RuntimeException("Failed to extract planes from frustum", t);
         }

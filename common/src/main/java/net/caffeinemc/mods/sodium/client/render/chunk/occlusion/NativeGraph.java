@@ -9,8 +9,10 @@ import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
+import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
 import net.caffeinemc.mods.sodium.ffi.NativeCull;
+import net.caffeinemc.mods.sodium.ffi.NativeFrustum;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Pointer;
@@ -56,7 +58,8 @@ public class NativeGraph implements Closeable {
     }
 
     public void findVisible(
-            Viewport viewport,
+            NativeFrustum frustum,
+            CameraTransform transform,
             float searchDistance,
             boolean useOcclusionCulling,
             int frame
@@ -64,11 +67,11 @@ public class NativeGraph implements Closeable {
         this.clear();
 
         try (var stack = MemoryStack.stackPush()) {
-            var resultsPtr = stack.ncalloc(8, 16, 1);
+            var resultsPtr = stack.ncalloc(8, 1, 16);
             var cameraPtr = NativeCull.frustumCreate(
                     stack,
-                    viewport.getFrustumIntersection(),
-                    viewport.getTransform()
+                    frustum,
+                    transform
             );
 
             NativeCull.graphSearch(

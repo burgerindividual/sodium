@@ -5,8 +5,6 @@ import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import org.lwjgl.system.*;
 import oshi.SystemInfo;
 
-import java.util.Locale;
-
 import static org.joml.FrustumIntersection.*;
 
 public class NativeCull {
@@ -64,7 +62,7 @@ public class NativeCull {
             for (var cpuFeatureString : cpuFeatureStrings) {
                 var lowercaseFeatureString = cpuFeatureString.toLowerCase();
                 hasAVX2 |= lowercaseFeatureString.contains("avx2");
-                hasSSE41 |= lowercaseFeatureString.contains("sse4_1");
+                hasSSE41 |= lowercaseFeatureString.contains("sse4_1") || lowercaseFeatureString.contains("sse4.1");
                 hasSSSE3 |= lowercaseFeatureString.contains("ssse3");
             }
 

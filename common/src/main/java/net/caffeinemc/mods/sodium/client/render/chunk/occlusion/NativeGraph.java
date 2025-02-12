@@ -3,7 +3,6 @@ package net.caffeinemc.mods.sodium.client.render.chunk.occlusion;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkUpdateType;
-import net.caffeinemc.mods.sodium.client.render.chunk.LocalSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
@@ -97,35 +96,29 @@ public class NativeGraph implements Closeable {
         var originRegionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
         var visibleSectionsPtr = MemoryUtil.memGetAddress(tilePtr + 16);
 
-        RenderRegion[] regionPair = {
-                this.regions.get(originRegionX, originRegionY, originRegionZ),
-                this.regions.get(originRegionX, originRegionY + 1, originRegionZ)
-        };
+        for (int regionYOffset = 0; regionYOffset < 2; regionYOffset++) {
+            var region = this.regions.get(
+                    originRegionX,
+                    originRegionY + regionYOffset,
+                    originRegionZ
+            );
+            if (region == null) {
+                continue;
+            }
+            var renderList = region.getRenderList();
+            var regionByteOffset = regionYOffset * (RenderRegion.REGION_SIZE / Byte.SIZE);
 
-        if (regionPair[0] == null && regionPair[1] == null) {
-            return;
-        }
+            for (int y = 0; y < 4; y++) {
+                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + regionByteOffset + (y * Long.BYTES));
 
-        for (int z = 0; z < 8; z++) {
-            var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (z * Long.BYTES));
-            while (bits != 0) {
-                var bitIdx = Long.numberOfTrailingZeros(bits);
-                bits &= bits - 1;
+                while (bits != 0) {
+                    var bitIdx = Long.numberOfTrailingZeros(bits);
+                    bits &= bits - 1;
 
-                // bits are ordered with the bit pattern of "ZZZYYYXXX".
-                // we have to disassemble bitIdx to retrieve our x and y coordinate
-                // of the set bit.
-                var x = bitIdx & 0b111;
-                var y = (bitIdx >> 3) & 0b111;
-
-                var regionIdx = y >> RenderRegion.REGION_HEIGHT_SH;
-                var region = regionPair[regionIdx];
-
-                if (region != null) {
-                    var sectionIdx = LocalSectionIndex.pack(x, y & RenderRegion.REGION_HEIGHT_M, z);
-                    RenderSection section = region.getSection(sectionIdx);
+                    var sectionIndex = (y * Long.SIZE) + bitIdx;
+                    RenderSection section = region.getSection(sectionIndex);
                     if (section != null) {
-                        this.visitSection(section, region.getRenderList(), frame);
+                        this.visitSection(section, renderList, frame);
                     }
                 }
             }

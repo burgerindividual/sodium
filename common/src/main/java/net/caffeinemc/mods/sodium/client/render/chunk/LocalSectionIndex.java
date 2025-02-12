@@ -1,10 +1,12 @@
 package net.caffeinemc.mods.sodium.client.render.chunk;
 
+import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
+
 public class LocalSectionIndex {
-    // XZY order
-    private static final int X_BITS = 0b111, X_OFFSET = 5, X_MASK = X_BITS << X_OFFSET;
-    private static final int Y_BITS = 0b11, Y_OFFSET = 0, Y_MASK = Y_BITS << Y_OFFSET;
-    private static final int Z_BITS = 0b111, Z_OFFSET = 2, Z_MASK = Z_BITS << Z_OFFSET;
+    // YZX order
+    private static final int X_BITS = RenderRegion.REGION_WIDTH_M, X_OFFSET = 0, X_MASK = X_BITS << X_OFFSET;
+    private static final int Y_BITS = RenderRegion.REGION_HEIGHT_M, Y_OFFSET = 6, Y_MASK = Y_BITS << Y_OFFSET;
+    private static final int Z_BITS = RenderRegion.REGION_LENGTH_M, Z_OFFSET = 3, Z_MASK = Z_BITS << Z_OFFSET;
 
     public static int pack(int x, int y, int z) {
         return ((x & X_BITS) << X_OFFSET) | ((y & Y_BITS) << Y_OFFSET) | ((z & Z_BITS) << Z_OFFSET);

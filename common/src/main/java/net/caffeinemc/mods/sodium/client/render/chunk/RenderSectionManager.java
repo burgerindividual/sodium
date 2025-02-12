@@ -1,5 +1,7 @@
 package net.caffeinemc.mods.sodium.client.render.chunk;
 
+import com.ibm.icu.impl.duration.DurationFormatter;
+import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMaps;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
@@ -59,6 +61,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3dc;
@@ -160,28 +163,17 @@ public class RenderSectionManager {
         final var searchDistance = this.getSearchDistance(fogParameters);
         final var useOcclusionCulling = this.shouldUseOcclusionCulling(camera, spectator);
 
-        boolean culled = false;
-
-        if (NativeCull.SUPPORTED && this.nativeGraph != null
-                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum) {
-            var player = Minecraft.getInstance().player;
-            if (player != null && player.isHolding(Items.DEBUG_STICK)) {
-                this.nativeGraph.findVisible(
-                        nativeFrustum,
-                        viewport.getTransform(),
-                        searchDistance,
-                        useOcclusionCulling,
-                        frame
-                );
-
-                this.renderLists = this.nativeGraph.createRenderLists(viewport);
-                this.taskLists = this.nativeGraph.getRebuildLists();
-
-                culled = true;
-            }
-        }
-
-        if (!culled) {
+//        var player = Minecraft.getInstance().player;
+        if (NativeCull.SUPPORTED
+                && this.nativeGraph != null
+                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum
+//                && player != null
+//                && player.isHolding(Items.DEBUG_STICK)
+                && (frame & 1) != 0) {
+            this.nativeGraph.findVisible(nativeFrustum, viewport.getTransform(), searchDistance, useOcclusionCulling, frame);
+            this.renderLists = this.nativeGraph.createRenderLists(viewport);
+            this.taskLists = this.nativeGraph.getRebuildLists();
+        } else {
             var visitor = new VisibleChunkCollector(frame);
             this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
             this.renderLists = visitor.createRenderLists(viewport);

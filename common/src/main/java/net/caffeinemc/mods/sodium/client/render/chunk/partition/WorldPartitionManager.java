@@ -12,7 +12,7 @@ public class WorldPartitionManager {
     }
 
     @NotNull
-    public WorldPartition getOrCreate(int sectionX, int sectionY, int sectionZ) {
+    public WorldPartition getOrCreateFromSection(int sectionX, int sectionY, int sectionZ) {
         var partitionKey = WorldPartition.keyFromSection(sectionX, sectionY, sectionZ);
 
         return this.partitions.computeIfAbsent(
@@ -21,8 +21,13 @@ public class WorldPartitionManager {
         );
     }
 
-    public WorldPartition get(int sectionX, int sectionY, int sectionZ) {
+    public WorldPartition getFromSection(int sectionX, int sectionY, int sectionZ) {
         var partitionKey = WorldPartition.keyFromSection(sectionX, sectionY, sectionZ);
+        return this.partitions.get(partitionKey);
+    }
+
+    public WorldPartition get(int x, int y, int z) {
+        var partitionKey = WorldPartition.key(x, y, z);
         return this.partitions.get(partitionKey);
     }
 

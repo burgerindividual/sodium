@@ -154,6 +154,10 @@ public class BitArray {
         }
     }
 
+    public long[] getWords() {
+        return this.words;
+    }
+
     private static int wordIndex(int index) {
         return index >> ADDRESS_BITS_PER_WORD;
     }

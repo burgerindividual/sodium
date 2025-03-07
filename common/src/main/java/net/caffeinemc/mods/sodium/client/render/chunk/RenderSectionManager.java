@@ -19,12 +19,8 @@ import net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilder
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
-import net.caffeinemc.mods.sodium.client.render.chunk.lists.VisibleChunkCollector;
-import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
-import net.caffeinemc.mods.sodium.client.render.chunk.partition.PartitionSectionIndex;
-import net.caffeinemc.mods.sodium.client.render.chunk.partition.UpdateStateUnsafe;
-import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartition;
-import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartitionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.NativeGraph;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.*;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RegionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
@@ -46,6 +42,8 @@ import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.caffeinemc.mods.sodium.ffi.NativeCull;
+import net.caffeinemc.mods.sodium.ffi.NativeFrustum;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -55,6 +53,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
@@ -80,11 +79,11 @@ public class RenderSectionManager {
 
     private final ClientLevel level;
 
-    private final OcclusionCuller occlusionCuller;
-
     private final int renderDistance;
 
     private final SortTriggering sortTriggering;
+
+    private final NativeGraph nativeGraph;
 
     private ChunkJobCollector lastBlockingCollector;
 
@@ -115,10 +114,22 @@ public class RenderSectionManager {
 
         this.partitions = new WorldPartitionManager();
         this.regions = new RenderRegionManager(commandList);
+
+        NativeGraph nativeGraph = null;
+        if (NativeCull.SUPPORTED) {
+            nativeGraph = new NativeGraph(
+                    this.regions,
+                    this.partitions,
+                    (byte) renderDistance,
+                    (byte) level.getMinSectionY(),
+                    (byte) level.getMaxSectionY()
+            );
+        }
+        this.nativeGraph = nativeGraph;
+
         this.sectionCache = new ClonedChunkSectionCache(this.level);
 
         this.renderLists = SortedRenderLists.empty();
-        this.occlusionCuller = new OcclusionCuller(this.partitions, this.level);
 
         this.taskLists = new EnumMap<>(ChunkUpdateType.class);
 
@@ -146,13 +157,19 @@ public class RenderSectionManager {
         final var searchDistance = this.getSearchDistance(fogParameters);
         final var useOcclusionCulling = this.shouldUseOcclusionCulling(camera, spectator);
 
-        // TODO: cache this
-        var visitor = new VisibleChunkCollector(frame);
-
-        this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
-
-        this.renderLists = visitor.createRenderLists(viewport);
-        this.taskLists = visitor.getRebuildLists();
+//        var player = Minecraft.getInstance().player;
+        if (NativeCull.SUPPORTED
+                && this.nativeGraph != null
+                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum
+//                && player != null
+//                && player.isHolding(Items.DEBUG_STICK)
+                && (frame & 1) != 0) {
+            this.nativeGraph.findVisible(nativeFrustum, viewport.getTransform(), searchDistance, useOcclusionCulling, frame);
+            this.renderLists = this.nativeGraph.createRenderLists(viewport);
+            this.taskLists = this.nativeGraph.getRebuildLists();
+        } else {
+            throw new UnsupportedOperationException("Java occlusion culling unimplemented");
+        }
     }
 
     private float getSearchDistance(FogParameters fogParameters) {
@@ -192,7 +209,7 @@ public class RenderSectionManager {
     }
 
     public void onSectionAdded(int x, int y, int z) {
-        var partition = this.partitions.getOrCreate(x, y, z);
+        var partition = this.partitions.getOrCreateFromSection(x, y, z);
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];
@@ -225,7 +242,7 @@ public class RenderSectionManager {
     }
 
     public void onSectionRemoved(int x, int y, int z) {
-        var partition = this.partitions.get(x, y, z);
+        var partition = this.partitions.getFromSection(x, y, z);
         if (partition == null) {
             return;
         }
@@ -303,7 +320,7 @@ public class RenderSectionManager {
         // TODO: speed this up by hoisting out the partition lookup.
         //  Perhaps make a SectionIterator class that allows partitions to be iterated from a bounding box of sections.
 
-        var partition = this.partitions.get(x, y, z);
+        var partition = this.partitions.getFromSection(x, y, z);
         if (partition == null) {
             return false;
         }
@@ -389,7 +406,19 @@ public class RenderSectionManager {
             int partitionSectionIndex,
             @NotNull BuiltSectionInfo info
     ) {
+        var pOcclusionData = OcclusionDataUnsafe.indexArray(partition.pOcclusionDataArray, partitionSectionIndex);
+        var oldVisibilityData = OcclusionDataUnsafe.getVisibilityData(pOcclusionData);
         var renderStateChanged = partition.setRenderState(partitionSectionIndex, info);
+        var newVisibilityData = OcclusionDataUnsafe.getVisibilityData(pOcclusionData);
+
+        if (NativeCull.SUPPORTED && this.nativeGraph != null && oldVisibilityData != newVisibilityData) {
+            this.nativeGraph.setSection(
+                    SectionPosUtil.unpackX(sectionPos),
+                    SectionPosUtil.unpackY(sectionPos),
+                    SectionPosUtil.unpackZ(sectionPos),
+                    newVisibilityData
+            );
+        }
 
         if (ArrayUtils.isEmpty(info.globalBlockEntities)) {
             var prevGlobalBlockEntities = this.globalBlockEntities.remove(sectionPos);
@@ -607,7 +636,8 @@ public class RenderSectionManager {
     }
 
     public boolean needsUpdate() {
-        return this.needsGraphUpdate;
+        var player = Minecraft.getInstance().player;
+        return !(player != null && player.isHolding(Items.DIAMOND_HOE));
     }
 
     public ChunkBuilder getBuilder() {
@@ -626,6 +656,10 @@ public class RenderSectionManager {
         try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
             this.regions.delete(commandList);
             this.chunkRenderer.delete(commandList);
+        }
+
+        if (NativeCull.SUPPORTED && this.nativeGraph != null) {
+            this.nativeGraph.close();
         }
     }
 
@@ -650,7 +684,7 @@ public class RenderSectionManager {
         int y = SectionPosUtil.unpackY(sectionPos);
         int z = SectionPosUtil.unpackZ(sectionPos);
 
-        var partition = this.partitions.get(x, y, z);
+        var partition = this.partitions.getFromSection(x, y, z);
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];
@@ -660,7 +694,7 @@ public class RenderSectionManager {
             throw new IllegalStateException("section must be initialized to schedule sort");
 //            return;
         }
-        
+
         var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
         var currentUpdate = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
 
@@ -671,11 +705,11 @@ public class RenderSectionManager {
                 || ((priorityMode == PriorityMode.NEARBY) && this.shouldPrioritizeTask(x, y, z, NEARBY_SORT_DISTANCE))) {
             pendingUpdate = ChunkUpdateType.IMPORTANT_SORT;
         }
-        
+
         pendingUpdate = ChunkUpdateType.getPromotionUpdateType(currentUpdate, pendingUpdate);
         if (pendingUpdate != null) {
             UpdateStateUnsafe.setPendingUpdate(pUpdateState, pendingUpdate);
-            
+
             var translucentData = partition.translucentDataArray[partitionSectionIndex];
             if (translucentData != null) {
                 translucentData.prepareTrigger(isDirectTrigger);
@@ -688,7 +722,7 @@ public class RenderSectionManager {
 
         this.sectionCache.invalidate(x, y, z);
 
-        var partition = this.partitions.get(x, y, z);
+        var partition = this.partitions.getFromSection(x, y, z);
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];
@@ -699,7 +733,7 @@ public class RenderSectionManager {
 
         var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
         var currentUpdate = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
-        
+
         ChunkUpdateType pendingUpdate;
 
         if (allowImportantRebuilds() && (important || this.shouldPrioritizeTask(x, y, z, NEARBY_REBUILD_DISTANCE))) {
@@ -801,7 +835,7 @@ public class RenderSectionManager {
     }
 
     public boolean isSectionBuilt(int x, int y, int z) {
-        var partition = this.partitions.get(x, y, z);
+        var partition = this.partitions.getFromSection(x, y, z);
 
         if (partition == null) {
             return false;

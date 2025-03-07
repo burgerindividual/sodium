@@ -109,7 +109,11 @@ public class NativeGraph implements Closeable {
         if (partition == null) {
             return;
         }
-
+        // If a tile is in the results queue, then we know that at least 1 section is visible in the tile. Because
+        // tiles and partitions represent the same data at the moment, and because there shouldn't ever be duplicate
+        // tile entries, we can go ahead and say that the partition is visible.
+        partition.lastVisibleFrame = frame;
+        partition.resetCullingState();
         var partitionRawVisibleSections = partition.visibleSections.getWords();
 
         for (int regionYInTile = 0; regionYInTile < 2; regionYInTile++) {

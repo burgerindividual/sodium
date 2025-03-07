@@ -31,14 +31,6 @@ public class WorldPartitionManager {
         return this.partitions.get(partitionKey);
     }
 
-    // TODO: should we do this, or should be use the lastVisibleFrame in WorldPartition?
-    //  alternative idea: have a branch based on lastVisibleFrame in this method to skip partitions.
-    public void resetCullingState() {
-        for (var partition : this.partitions.values()) {
-            partition.resetCullingState();
-        }
-    }
-
     public void cleanup() {
         Iterator<WorldPartition> it = this.partitions.values().iterator();
 

@@ -6,6 +6,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.GraphDirectionSe
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.TranslucentData;
 import net.caffeinemc.mods.sodium.client.util.collections.BitArray;
 import net.caffeinemc.mods.sodium.client.util.task.CancellationToken;
+import net.caffeinemc.mods.sodium.ffi.NativeCull;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -48,7 +49,7 @@ public class WorldPartition {
     //  some sort of key to identify a specific update submission.
     public final long pUpdateStateArray;
 
-//    private int lastVisibleFrame = -1;
+    public int lastVisibleFrame = -1;
     private int sectionCount;
 
     public WorldPartition() {
@@ -144,9 +145,11 @@ public class WorldPartition {
     public void resetCullingState() {
         this.visibleSections.unsetAll();
 
-        for (int sectionIndex = 0; sectionIndex < PARTITION_SIZE; sectionIndex++) {
-            var pOcclusionData = OcclusionDataUnsafe.indexArray(this.pOcclusionDataArray, sectionIndex);
-            OcclusionDataUnsafe.setIncomingDirections(pOcclusionData, GraphDirectionSet.NONE);
+        if (!NativeCull.SUPPORTED) {
+            for (int sectionIndex = 0; sectionIndex < PARTITION_SIZE; sectionIndex++) {
+                var pOcclusionData = OcclusionDataUnsafe.indexArray(this.pOcclusionDataArray, sectionIndex);
+                OcclusionDataUnsafe.setIncomingDirections(pOcclusionData, GraphDirectionSet.NONE);
+            }
         }
     }
 

@@ -206,8 +206,6 @@ public class RenderSectionManager {
         for (var list : this.taskLists.values()) {
             list.clear();
         }
-
-        this.partitions.resetCullingState();
     }
 
     public void onSectionAdded(int x, int y, int z) {
@@ -323,7 +321,7 @@ public class RenderSectionManager {
         //  Perhaps make a SectionIterator class that allows partitions to be iterated from a bounding box of sections.
 
         var partition = this.partitions.getFromSection(x, y, z);
-        if (partition == null) {
+        if (partition == null || partition.lastVisibleFrame != this.lastUpdatedFrame) {
             return false;
         }
 

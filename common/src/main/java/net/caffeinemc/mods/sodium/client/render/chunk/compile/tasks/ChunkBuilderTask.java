@@ -2,6 +2,7 @@ package net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks;
 
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
 import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
+import net.minecraft.core.SectionPos;
 import org.joml.Vector3dc;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
@@ -40,9 +41,9 @@ public abstract class ChunkBuilderTask<OUTPUT extends BuilderTaskOutput> impleme
         this.absoluteCameraPos = absoluteCameraPos;
 
         var sectionPos = section.pos();
-        var x = SectionPosUtil.unpackX(sectionPos);
-        var y = SectionPosUtil.unpackY(sectionPos);
-        var z = SectionPosUtil.unpackZ(sectionPos);
+        var x = SectionPos.x(sectionPos);
+        var y = SectionPos.y(sectionPos);
+        var z = SectionPos.z(sectionPos);
         this.cameraPos = new Vector3f(
                 (float) (absoluteCameraPos.x() - (double) SectionPosUtil.originCoord(x)),
                 (float) (absoluteCameraPos.y() - (double) SectionPosUtil.originCoord(y)),

@@ -16,7 +16,7 @@ public class OcclusionDataUnsafe {
 
         var ptr = MemoryUtil.nmemAlignedAlloc(ALIGNMENT, bytes);
         // the default value for all the fields is 0, so we can use a memset
-        MemoryUtil.memSet(ptr, 0, ptr);
+        MemoryUtil.memSet(ptr, 0, bytes);
 
         return ptr;
     }

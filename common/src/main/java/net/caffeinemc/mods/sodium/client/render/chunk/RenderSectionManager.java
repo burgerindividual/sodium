@@ -85,13 +85,13 @@ public class RenderSectionManager {
 
     private final NativeGraph nativeGraph;
 
-    private ChunkJobCollector lastBlockingCollector;
+    @NotNull
+    private final EnumMap<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> taskLists;
 
     @NotNull
     private SortedRenderLists renderLists;
 
-    @NotNull
-    private Map<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> taskLists;
+    private ChunkJobCollector lastBlockingCollector;
 
     private int lastUpdatedFrame;
     private int nextSectionUid;
@@ -115,11 +115,20 @@ public class RenderSectionManager {
         this.partitions = new WorldPartitionManager();
         this.regions = new RenderRegionManager(commandList);
 
+        this.taskLists = new EnumMap<>(ChunkUpdateType.class);
+
+        for (var type : ChunkUpdateType.values()) {
+            this.taskLists.put(type, new ArrayDeque<>());
+        }
+
+        this.renderLists = SortedRenderLists.empty();
+
         NativeGraph nativeGraph = null;
         if (NativeCull.SUPPORTED) {
             nativeGraph = new NativeGraph(
                     this.regions,
                     this.partitions,
+                    this.taskLists,
                     (byte) renderDistance,
                     (byte) level.getMinSectionY(),
                     (byte) level.getMaxSectionY()
@@ -128,14 +137,6 @@ public class RenderSectionManager {
         this.nativeGraph = nativeGraph;
 
         this.sectionCache = new ClonedChunkSectionCache(this.level);
-
-        this.renderLists = SortedRenderLists.empty();
-
-        this.taskLists = new EnumMap<>(ChunkUpdateType.class);
-
-        for (var type : ChunkUpdateType.values()) {
-            this.taskLists.put(type, new ArrayDeque<>());
-        }
     }
 
     public void updateCameraState(Vector3dc cameraPosition, Camera camera) {
@@ -163,10 +164,11 @@ public class RenderSectionManager {
                 && viewport.getFrustum() instanceof NativeFrustum nativeFrustum
 //                && player != null
 //                && player.isHolding(Items.DEBUG_STICK)
-                && (frame & 1) != 0) {
+//                && (frame & 1) != 0) {
+        ) {
+            // the rebuild lists will also be updated in this call
             this.nativeGraph.findVisible(nativeFrustum, viewport.getTransform(), searchDistance, useOcclusionCulling, frame);
             this.renderLists = this.nativeGraph.createRenderLists(viewport);
-            this.taskLists = this.nativeGraph.getRebuildLists();
         } else {
             throw new UnsupportedOperationException("Java occlusion culling unimplemented");
         }
@@ -413,9 +415,9 @@ public class RenderSectionManager {
 
         if (NativeCull.SUPPORTED && this.nativeGraph != null && oldVisibilityData != newVisibilityData) {
             this.nativeGraph.setSection(
-                    SectionPosUtil.unpackX(sectionPos),
-                    SectionPosUtil.unpackY(sectionPos),
-                    SectionPosUtil.unpackZ(sectionPos),
+                    SectionPos.x(sectionPos),
+                    SectionPos.y(sectionPos),
+                    SectionPos.z(sectionPos),
                     newVisibilityData
             );
         }
@@ -680,11 +682,15 @@ public class RenderSectionManager {
     }
 
     public void scheduleSort(long sectionPos, boolean isDirectTrigger) {
-        int x = SectionPosUtil.unpackX(sectionPos);
-        int y = SectionPosUtil.unpackY(sectionPos);
-        int z = SectionPosUtil.unpackZ(sectionPos);
+        int x = SectionPos.x(sectionPos);
+        int y = SectionPos.y(sectionPos);
+        int z = SectionPos.z(sectionPos);
 
         var partition = this.partitions.getFromSection(x, y, z);
+        if (partition == null) {
+            return;
+        }
+
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];
@@ -723,6 +729,10 @@ public class RenderSectionManager {
         this.sectionCache.invalidate(x, y, z);
 
         var partition = this.partitions.getFromSection(x, y, z);
+        if (partition == null) {
+            return;
+        }
+
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];

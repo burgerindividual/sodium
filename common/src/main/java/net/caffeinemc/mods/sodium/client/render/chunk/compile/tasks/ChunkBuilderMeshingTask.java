@@ -75,9 +75,9 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         VisGraph occluder = new VisGraph();
 
         var sectionPos = this.section.pos();
-        int sectionX = SectionPosUtil.unpackX(sectionPos);
-        int sectionY = SectionPosUtil.unpackX(sectionPos);
-        int sectionZ = SectionPosUtil.unpackX(sectionPos);
+        int sectionX = SectionPos.x(sectionPos);
+        int sectionY = SectionPos.y(sectionPos);
+        int sectionZ = SectionPos.z(sectionPos);
 
         ChunkBuildBuffers buffers = buildContext.buffers;
         buffers.init(renderData, this.section.regionSectionIndex());

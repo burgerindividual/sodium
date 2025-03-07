@@ -1,20 +1,9 @@
 package net.caffeinemc.mods.sodium.client.util;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 
 public class SectionPosUtil {
-    public static int unpackX(long packed) {
-        return (int) (packed >>> 42);
-    }
-
-    public static int unpackY(long packed) {
-        return (int) packed & 0xFFFFF;
-    }
-
-    public static int unpackZ(long packed) {
-        return (int) (packed >>> 20) & 0x3FFFFF;
-    }
-
     public static int originCoord(int sectionCoord) {
         return sectionCoord << 4;
     }
@@ -52,9 +41,9 @@ public class SectionPosUtil {
     public static String packedToString(long sectionPos) {
         return String.format(
                 "X: %d, Y: %d, Z: %d",
-                unpackX(sectionPos),
-                unpackY(sectionPos),
-                unpackZ(sectionPos)
+                SectionPos.x(sectionPos),
+                SectionPos.y(sectionPos),
+                SectionPos.z(sectionPos)
         );
     }
 }

@@ -16,22 +16,22 @@ public record UniqueSectionRef(
     @Override
     public @NotNull String toString() {
         return "Section{" +
-                "Pos: " + SectionPosUtil.packedToString(this.pos) +
+                SectionPosUtil.packedToString(this.pos) +
                 ", UID:" + this.uid +
                 '}';
     }
 
 //    public int partitionSectionIndex() {
-//        var x = SectionPosUtil.unpackX(this.pos);
-//        var y = SectionPosUtil.unpackY(this.pos);
-//        var z = SectionPosUtil.unpackZ(this.pos);
+//        var x = SectionPos.x(this.pos);
+//        var y = SectionPos.y(this.pos);
+//        var z = SectionPos.z(this.pos);
 //        return PartitionSectionIndex.pack(x, y, z);
 //    }
 
 //    public int regionSectionIndex() {
-//        var x = SectionPosUtil.unpackX(this.pos);
-//        var y = SectionPosUtil.unpackY(this.pos);
-//        var z = SectionPosUtil.unpackZ(this.pos);
+//        var x = SectionPos.x(this.pos);
+//        var y = SectionPos.y(this.pos);
+//        var z = SectionPos.z(this.pos);
 //        return RegionSectionIndex.pack(x, y, z);
 //    }
 }

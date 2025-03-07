@@ -24,7 +24,6 @@ import org.lwjgl.system.Pointer;
 import java.io.Closeable;
 import java.util.ArrayDeque;
 import java.util.EnumMap;
-import java.util.Map;
 import java.util.Queue;
 
 public class NativeGraph implements Closeable {
@@ -39,6 +38,7 @@ public class NativeGraph implements Closeable {
     public NativeGraph(
             RenderRegionManager regions,
             WorldPartitionManager partitions,
+            EnumMap<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> sortedRebuildLists,
             byte renderDistance,
             byte minSectionY,
             byte maxSectionY
@@ -52,21 +52,13 @@ public class NativeGraph implements Closeable {
         this.partitions = partitions;
 
         this.sortedRenderLists = new ObjectArrayList<>();
-        this.sortedRebuildLists = new EnumMap<>(ChunkUpdateType.class);
-
-        for (var type : ChunkUpdateType.values()) {
-            this.sortedRebuildLists.put(type, new ArrayDeque<>());
-        }
+        this.sortedRebuildLists = sortedRebuildLists;
 
         this.sortItems = new int[RenderRegion.REGION_SIZE];
     }
 
     private void clear() {
         this.sortedRenderLists.clear();
-
-        for (var rebuildList : this.sortedRebuildLists.values()) {
-            rebuildList.clear();
-        }
     }
 
     public void findVisible(
@@ -120,29 +112,31 @@ public class NativeGraph implements Closeable {
 
         var partitionRawVisibleSections = partition.visibleSections.getWords();
 
-        for (int regionYOffset = 0; regionYOffset < 2; regionYOffset++) {
-            var region = this.regions.get(
-                    originRegionX,
-                    originRegionY + regionYOffset,
-                    originRegionZ
-            );
+        for (int regionYInTile = 0; regionYInTile < 2; regionYInTile++) {
+            var regionX = originRegionX;
+            var regionY = originRegionY + regionYInTile;
+            var regionZ = originRegionZ;
+            var region = this.regions.get(regionX, regionY, regionZ);
             if (region == null) {
                 continue;
             }
-            var renderList = region.getRenderList();
-            var regionWordOffset = regionYOffset * (RenderRegion.REGION_SIZE / Long.SIZE);
 
-            for (int y = 0; y < 4; y++) {
-                var wordIdx = y + regionWordOffset;
-                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (wordIdx * Long.BYTES));
-                partitionRawVisibleSections[wordIdx] = bits;
+            var regionSectionX = regionX << RenderRegion.REGION_WIDTH_SH;
+            var regionSectionY = regionY << RenderRegion.REGION_HEIGHT_SH;
+            var regionSectionZ = regionZ << RenderRegion.REGION_LENGTH_SH;
+            var renderList = region.getRenderList();
+
+            for (int sectionYInRegion = 0; sectionYInRegion < 4; sectionYInRegion++) {
+                var sectionYInPartition = sectionYInRegion + (regionYInTile * RenderRegion.REGION_HEIGHT);
+                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInPartition * Long.BYTES));
+                partitionRawVisibleSections[sectionYInPartition] = bits;
 
                 while (bits != 0) {
                     var bitIdx = Long.numberOfTrailingZeros(bits);
                     bits &= bits - 1;
 
-                    var regionSectionIndex = (y * Long.SIZE) + bitIdx;
-                    var partitionSectionIndex = (wordIdx * Long.SIZE) + bitIdx;
+                    var regionSectionIndex = (sectionYInRegion * Long.SIZE) + bitIdx;
+                    var partitionSectionIndex = (sectionYInPartition * Long.SIZE) + bitIdx;
 
                     var sectionFlags = partition.flagsArray[partitionSectionIndex];
 
@@ -166,12 +160,9 @@ public class NativeGraph implements Closeable {
 
                         if (queue.size() < type.getMaximumQueueSize()) {
                             var sectionPos = SectionPos.asLong(
-                                    (originRegionX << RenderRegion.REGION_WIDTH_SH)
-                                            + RegionSectionIndex.unpackX(regionSectionIndex),
-                                    (originRegionY << RenderRegion.REGION_HEIGHT_SH)
-                                            + RegionSectionIndex.unpackY(regionSectionIndex),
-                                    (originRegionZ << RenderRegion.REGION_LENGTH_SH)
-                                            + RegionSectionIndex.unpackZ(regionSectionIndex)
+                                    regionSectionX + RegionSectionIndex.unpackX(regionSectionIndex),
+                                    regionSectionY + RegionSectionIndex.unpackY(regionSectionIndex),
+                                    regionSectionZ + RegionSectionIndex.unpackZ(regionSectionIndex)
                             );
                             var sectionUid = UpdateStateUnsafe.getSectionUid(pUpdateState);
 
@@ -225,10 +216,6 @@ public class NativeGraph implements Closeable {
         }
 
         return new SortedRenderLists(sorted);
-    }
-
-    public Map<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> getRebuildLists() {
-        return this.sortedRebuildLists;
     }
 
     public void setSection(int x, int y, int z, long visibilityData) {

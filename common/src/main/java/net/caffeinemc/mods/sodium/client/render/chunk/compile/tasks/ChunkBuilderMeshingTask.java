@@ -4,10 +4,10 @@ import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.chunk.ExtendedBlockEntityType;
 import net.caffeinemc.mods.sodium.client.render.chunk.DefaultChunkRenderer;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildBuffers;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildOutput;
+import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkBuilder;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderCache;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.pipeline.BlockRenderer;
@@ -22,6 +22,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.Transl
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.PresentTranslucentData;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.TranslucentData;
 import net.caffeinemc.mods.sodium.client.services.PlatformLevelRenderHooks;
+import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
 import net.caffeinemc.mods.sodium.client.util.task.CancellationToken;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
@@ -33,6 +34,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.chunk.VisGraph;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.block.RenderShape;
@@ -52,10 +54,18 @@ import java.util.Map;
  */
 public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> {
     private final ChunkRenderContext renderContext;
+    private final TranslucentData translucentData;
 
-    public ChunkBuilderMeshingTask(RenderSection render, int buildTime, Vector3dc absoluteCameraPos, ChunkRenderContext renderContext) {
-        super(render, buildTime, absoluteCameraPos);
+    public ChunkBuilderMeshingTask(
+            UniqueSectionRef section,
+            TranslucentData translucentData,
+            int submitTime,
+            Vector3dc absoluteCameraPos,
+            ChunkRenderContext renderContext
+    ) {
+        super(section, submitTime, absoluteCameraPos);
         this.renderContext = renderContext;
+        this.translucentData = translucentData;
     }
 
     @Override
@@ -64,17 +74,22 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         BuiltSectionInfo.Builder renderData = new BuiltSectionInfo.Builder();
         VisGraph occluder = new VisGraph();
 
+        var sectionPos = this.section.pos();
+        int sectionX = SectionPosUtil.unpackX(sectionPos);
+        int sectionY = SectionPosUtil.unpackX(sectionPos);
+        int sectionZ = SectionPosUtil.unpackX(sectionPos);
+
         ChunkBuildBuffers buffers = buildContext.buffers;
-        buffers.init(renderData, this.render.getSectionIndex());
+        buffers.init(renderData, this.section.regionSectionIndex());
 
         BlockRenderCache cache = buildContext.cache;
         cache.init(this.renderContext);
 
         LevelSlice slice = cache.getWorldSlice();
 
-        int minX = this.render.getOriginX();
-        int minY = this.render.getOriginY();
-        int minZ = this.render.getOriginZ();
+        int minX = SectionPosUtil.originCoord(sectionX);
+        int minY = SectionPosUtil.originCoord(sectionY);
+        int minZ = SectionPosUtil.originCoord(sectionZ);
 
         int maxX = minX + 16;
         int maxY = minY + 16;
@@ -86,7 +101,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
 
         TranslucentGeometryCollector collector;
         if (SodiumClientMod.options().performance.getSortBehavior() != SortBehavior.OFF) {
-            collector = new TranslucentGeometryCollector(this.render.getPosition());
+            collector = new TranslucentGeometryCollector(SectionPos.of(sectionPos));
         } else {
             collector = null;
         }
@@ -163,7 +178,8 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         Map<TerrainRenderPass, BuiltSectionMeshParts> meshes = new Reference2ReferenceOpenHashMap<>();
         var visibleSlices = DefaultChunkRenderer.getVisibleFaces(
                 (int) this.absoluteCameraPos.x(), (int) this.absoluteCameraPos.y(), (int) this.absoluteCameraPos.z(),
-                this.render.getChunkX(), this.render.getChunkY(), this.render.getChunkZ());
+                sectionX, sectionY, sectionZ
+        );
         profiler.popPush("meshing");
 
         for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
@@ -194,13 +210,13 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         boolean reuseUploadedData = false;
         TranslucentData translucentData = null;
         if (collector != null) {
-            var oldData = this.render.getTranslucentData();
+            var oldData = this.translucentData;
             translucentData = collector.getTranslucentData(
                     oldData, meshes.get(DefaultTerrainRenderPasses.TRANSLUCENT), this);
             reuseUploadedData = translucentData == oldData;
         }
 
-        var output = new ChunkBuildOutput(this.render, this.submitTime, translucentData, renderData.build(), meshes);
+        var output = new ChunkBuildOutput(this.section, this.submitTime, translucentData, renderData.build(), meshes);
 
         if (collector != null) {
             if (reuseUploadedData) {
@@ -226,7 +242,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         } catch (Exception ignored) {}
         CrashReportCategory.populateBlockDetails(crashReportSection, slice, pos, state);
 
-        crashReportSection.setDetail("Chunk section", this.render);
+        crashReportSection.setDetail("Chunk section", this.section);
         if (this.renderContext != null) {
             crashReportSection.setDetail("Render context volume", this.renderContext.getVolume());
         }

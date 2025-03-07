@@ -17,6 +17,9 @@ public enum ChunkUpdateType {
         this.taskEffort = taskEffort;
     }
 
+    // It's supposedly faster to cache this
+    public static final ChunkUpdateType[] VALUES = ChunkUpdateType.values();
+
     public static ChunkUpdateType getPromotionUpdateType(ChunkUpdateType prev, ChunkUpdateType next) {
         if (prev == null || prev == SORT || prev == next) {
             return next;

@@ -1,10 +1,11 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks;
 
+import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
+import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
 import org.joml.Vector3dc;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
 
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.BuilderTaskOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.CombinedCameraPos;
@@ -21,7 +22,7 @@ import net.caffeinemc.mods.sodium.client.util.task.CancellationToken;
  * on the main thread.
  */
 public abstract class ChunkBuilderTask<OUTPUT extends BuilderTaskOutput> implements CombinedCameraPos {
-    protected final RenderSection render;
+    protected final UniqueSectionRef section;
     protected final int submitTime;
     protected final Vector3dc absoluteCameraPos;
     protected final Vector3fc cameraPos;
@@ -29,18 +30,23 @@ public abstract class ChunkBuilderTask<OUTPUT extends BuilderTaskOutput> impleme
     /**
      * Constructs a new build task for the given chunk and converts the absolute camera position to a relative position. While the absolute position is stored as a double vector, the relative position is stored as a float vector.
      * 
-     * @param render            The chunk to build
+     * @param section           The chunk section to build
      * @param time              The frame in which this task was created
      * @param absoluteCameraPos The absolute position of the camera
      */
-    public ChunkBuilderTask(RenderSection render, int time, Vector3dc absoluteCameraPos) {
-        this.render = render;
+    public ChunkBuilderTask(UniqueSectionRef section, int time, Vector3dc absoluteCameraPos) {
+        this.section = section;
         this.submitTime = time;
         this.absoluteCameraPos = absoluteCameraPos;
+
+        var sectionPos = section.pos();
+        var x = SectionPosUtil.unpackX(sectionPos);
+        var y = SectionPosUtil.unpackY(sectionPos);
+        var z = SectionPosUtil.unpackZ(sectionPos);
         this.cameraPos = new Vector3f(
-                (float) (absoluteCameraPos.x() - (double) render.getOriginX()),
-                (float) (absoluteCameraPos.y() - (double) render.getOriginY()),
-                (float) (absoluteCameraPos.z() - (double) render.getOriginZ()));
+                (float) (absoluteCameraPos.x() - (double) SectionPosUtil.originCoord(x)),
+                (float) (absoluteCameraPos.y() - (double) SectionPosUtil.originCoord(y)),
+                (float) (absoluteCameraPos.z() - (double) SectionPosUtil.originCoord(z)));
     }
 
     /**

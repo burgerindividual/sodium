@@ -22,7 +22,7 @@ import java.util.function.IntFunction;
 public class BuiltSectionInfo {
     public static final BuiltSectionInfo EMPTY = createEmptyData();
 
-    public final int flags;
+    public final byte flags;
     public final long visibilityData;
 
     public final BlockEntity @Nullable[] globalBlockEntities;
@@ -38,7 +38,7 @@ public class BuiltSectionInfo {
         this.culledBlockEntities = toArray(culledBlockEntities, BlockEntity[]::new);
         this.animatedSprites = toArray(animatedSprites, TextureAtlasSprite[]::new);
 
-        int flags = 0;
+        byte flags = 0;
 
         if (!blockRenderPasses.isEmpty()) {
             flags |= 1 << RenderSectionFlags.HAS_BLOCK_GEOMETRY;

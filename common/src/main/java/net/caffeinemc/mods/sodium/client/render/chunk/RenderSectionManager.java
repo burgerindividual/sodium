@@ -1,12 +1,7 @@
 package net.caffeinemc.mods.sodium.client.render.chunk;
 
-import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
-import it.unimi.dsi.fastutil.longs.Long2ReferenceMaps;
+import it.unimi.dsi.fastutil.longs.Long2ReferenceLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Reference2ReferenceLinkedOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ReferenceSet;
-import it.unimi.dsi.fastutil.objects.ReferenceSets;
 import net.caffeinemc.mods.sodium.api.texture.SpriteUtil;
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
@@ -14,6 +9,7 @@ import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.BuilderTaskOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkSortOutput;
+import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkBuilder;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkJobCollector;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkJobResult;
@@ -24,13 +20,18 @@ import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.VisibleChunkCollector;
-import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.GraphDirection;
 import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.PartitionSectionIndex;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.UpdateStateUnsafe;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartition;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartitionManager;
+import net.caffeinemc.mods.sodium.client.render.chunk.region.RegionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.SortBehavior.DeferMode;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.SortBehavior.PriorityMode;
+import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.DynamicData;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.DynamicTopoData;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.NoData;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.TranslucentData;
@@ -41,6 +42,7 @@ import net.caffeinemc.mods.sodium.client.render.util.RenderAsserts;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
 import net.caffeinemc.mods.sodium.client.util.MathUtil;
+import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
 import net.caffeinemc.mods.sodium.client.world.LevelSlice;
 import net.caffeinemc.mods.sodium.client.world.cloned.ChunkRenderContext;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
@@ -52,6 +54,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
@@ -65,18 +68,17 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 public class RenderSectionManager {
     private final ChunkBuilder builder;
 
+    private final Long2ReferenceOpenHashMap<BlockEntity[]> globalBlockEntities = new Long2ReferenceOpenHashMap<>();
+
+    private final WorldPartitionManager partitions;
     private final RenderRegionManager regions;
     private final ClonedChunkSectionCache sectionCache;
-
-    private final Long2ReferenceMap<RenderSection> sectionByPosition = new Long2ReferenceOpenHashMap<>();
 
     private final ConcurrentLinkedDeque<ChunkJobResult<? extends BuilderTaskOutput>> buildResults = new ConcurrentLinkedDeque<>();
 
     private final ChunkRenderer chunkRenderer;
 
     private final ClientLevel level;
-
-    private final ReferenceSet<RenderSection> sectionsWithGlobalEntities = new ReferenceOpenHashSet<>();
 
     private final OcclusionCuller occlusionCuller;
 
@@ -90,9 +92,10 @@ public class RenderSectionManager {
     private SortedRenderLists renderLists;
 
     @NotNull
-    private Map<ChunkUpdateType, ArrayDeque<RenderSection>> taskLists;
+    private Map<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> taskLists;
 
     private int lastUpdatedFrame;
+    private int nextSectionUid;
 
     private boolean needsGraphUpdate;
 
@@ -110,11 +113,12 @@ public class RenderSectionManager {
 
         this.sortTriggering = new SortTriggering();
 
+        this.partitions = new WorldPartitionManager();
         this.regions = new RenderRegionManager(commandList);
         this.sectionCache = new ClonedChunkSectionCache(this.level);
 
         this.renderLists = SortedRenderLists.empty();
-        this.occlusionCuller = new OcclusionCuller(Long2ReferenceMaps.unmodifiable(this.sectionByPosition), this.level);
+        this.occlusionCuller = new OcclusionCuller(this.partitions, this.level);
 
         this.taskLists = new EnumMap<>(ChunkUpdateType.class);
 
@@ -142,6 +146,7 @@ public class RenderSectionManager {
         final var searchDistance = this.getSearchDistance(fogParameters);
         final var useOcclusionCulling = this.shouldUseOcclusionCulling(camera, spectator);
 
+        // TODO: cache this
         var visitor = new VisibleChunkCollector(frame);
 
         this.occlusionCuller.findVisible(visitor, viewport, searchDistance, useOcclusionCulling, frame);
@@ -182,59 +187,71 @@ public class RenderSectionManager {
         for (var list : this.taskLists.values()) {
             list.clear();
         }
+
+        this.partitions.resetCullingState();
     }
 
     public void onSectionAdded(int x, int y, int z) {
-        long key = SectionPos.asLong(x, y, z);
+        var partition = this.partitions.getOrCreate(x, y, z);
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
-        if (this.sectionByPosition.containsKey(key)) {
+        var sectionFlags = partition.flagsArray[partitionSectionIndex];
+
+        if (sectionFlags != RenderSectionFlags.UNINITIALIZED) {
             return;
         }
 
-        RenderRegion region = this.regions.createForChunk(x, y, z);
+        partition.createSection(partitionSectionIndex);
 
-        RenderSection renderSection = new RenderSection(region, x, y, z);
-        region.addSection(renderSection);
+        var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+        UpdateStateUnsafe.setSectionUid(pUpdateState, this.nextSectionUid);
+        this.nextSectionUid++;
 
-        this.sectionByPosition.put(key, renderSection);
+        RenderRegion region = this.regions.createForChunk(x, y, z, partition);
+        region.addSection();
 
         ChunkAccess chunk = this.level.getChunk(x, z);
         LevelChunkSection section = chunk.getSections()[this.level.getSectionIndexFromSectionY(y)];
 
         if (section.hasOnlyAir()) {
-            this.updateSectionInfo(renderSection, BuiltSectionInfo.EMPTY);
+            var sectionPos = SectionPos.asLong(x, y, z);
+            this.updateSectionInfo(sectionPos, partition, partitionSectionIndex, BuiltSectionInfo.EMPTY);
         } else {
-            renderSection.setPendingUpdate(ChunkUpdateType.INITIAL_BUILD);
+            UpdateStateUnsafe.setPendingUpdate(pUpdateState, ChunkUpdateType.INITIAL_BUILD);
         }
-
-        this.connectNeighborNodes(renderSection);
 
         // force update to schedule build task
         this.needsGraphUpdate = true;
     }
 
     public void onSectionRemoved(int x, int y, int z) {
-        long sectionPos = SectionPos.asLong(x, y, z);
-        RenderSection section = this.sectionByPosition.remove(sectionPos);
-
-        if (section == null) {
+        var partition = this.partitions.get(x, y, z);
+        if (partition == null) {
             return;
         }
 
-        if (section.getTranslucentData() != null) {
-            this.sortTriggering.removeSection(section.getTranslucentData(), sectionPos);
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
+
+        var sectionFlags = partition.flagsArray[partitionSectionIndex];
+        if (sectionFlags == RenderSectionFlags.UNINITIALIZED) {
+            return;
         }
 
-        RenderRegion region = section.getRegion();
+        var sectionPos = SectionPos.asLong(x, y, z);
 
+        var translucentData = partition.translucentDataArray[partitionSectionIndex];
+        if (translucentData != null) {
+            this.sortTriggering.removeSection(translucentData, sectionPos);
+        }
+
+        RenderRegion region = this.regions.get(x, y, z);
         if (region != null) {
-            region.removeSection(section);
+            var regionSectionIndex = RegionSectionIndex.fromPartition(partitionSectionIndex);
+            region.removeSection(regionSectionIndex);
         }
 
-        this.disconnectNeighborNodes(section);
-        this.updateSectionInfo(section, null);
-
-        section.delete();
+        this.globalBlockEntities.remove(sectionPos);
+        partition.deleteSection(partitionSectionIndex);
 
         // force update to remove section from render lists
         this.needsGraphUpdate = true;
@@ -255,22 +272,22 @@ public class RenderSectionManager {
         while (it.hasNext()) {
             ChunkRenderList renderList = it.next();
 
-            var region = renderList.getRegion();
             var iterator = renderList.sectionsWithSpritesIterator();
-
             if (iterator == null) {
                 continue;
             }
 
+            var partition = renderList.getPartition();
+            var partitionRegionOffset = renderList.getPartitionRegionOffset();
+
             while (iterator.hasNext()) {
-                var section = region.getSection(iterator.nextByteAsInt());
+                var regionSectionIndex = iterator.nextByteAsInt();
+                var partitionSectionIndex = PartitionSectionIndex.fromRegion(regionSectionIndex, partitionRegionOffset);
 
-                if (section == null) {
-                    continue;
-                }
+                // checking if the section is uninitialized should be unnecessary, because when a section is
+                // uninitialized, its animated sprites array should be null.
 
-                var sprites = section.getAnimatedSprites();
-
+                var sprites = partition.animatedSpritesArray[partitionSectionIndex];
                 if (sprites == null) {
                     continue;
                 }
@@ -283,13 +300,16 @@ public class RenderSectionManager {
     }
 
     public boolean isSectionVisible(int x, int y, int z) {
-        RenderSection render = this.getRenderSection(x, y, z);
+        // TODO: speed this up by hoisting out the partition lookup.
+        //  Perhaps make a SectionIterator class that allows partitions to be iterated from a bounding box of sections.
 
-        if (render == null) {
+        var partition = this.partitions.get(x, y, z);
+        if (partition == null) {
             return false;
         }
 
-        return render.getLastVisibleFrame() == this.lastUpdatedFrame;
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
+        return partition.visibleSections.get(partitionSectionIndex);
     }
 
     public void uploadChunks() {
@@ -317,60 +337,92 @@ public class RenderSectionManager {
 
         boolean touchedSectionInfo = false;
         for (var result : filtered) {
-            TranslucentData oldData = result.render.getTranslucentData();
+            var section = result.section;
+            var sectionPos = section.pos();
+            var partition = section.partition();
+            var partitionSectionIndex = section.partitionSectionIndex();
+
+            TranslucentData oldData = partition.translucentDataArray[partitionSectionIndex];
             if (result instanceof ChunkBuildOutput chunkBuildOutput) {
-                touchedSectionInfo |= this.updateSectionInfo(result.render, chunkBuildOutput.info);
+                touchedSectionInfo |= this.updateSectionInfo(sectionPos, partition, partitionSectionIndex, chunkBuildOutput.info);
 
                 if (chunkBuildOutput.translucentData != null) {
-                    this.sortTriggering.integrateTranslucentData(oldData, chunkBuildOutput.translucentData, this.cameraPosition, this::scheduleSort);
+                    this.sortTriggering.integrateTranslucentData(
+                            oldData,
+                            chunkBuildOutput.translucentData,
+                            this.cameraPosition,
+                            this::scheduleSort
+                    );
 
                     // a rebuild always generates new translucent data which means applyTriggerChanges isn't necessary
-                    result.render.setTranslucentData(chunkBuildOutput.translucentData);
+                    partition.translucentDataArray[partitionSectionIndex] = chunkBuildOutput.translucentData;
                 }
             } else if (result instanceof ChunkSortOutput sortOutput
                     && sortOutput.getDynamicSorter() != null
-                    && result.render.getTranslucentData() instanceof DynamicTopoData data) {
-                this.sortTriggering.applyTriggerChanges(data, sortOutput.getDynamicSorter(), result.render.getPosition(), this.cameraPosition);
+                    && partition.translucentDataArray[partitionSectionIndex] instanceof DynamicTopoData data) {
+                this.sortTriggering.applyTriggerChanges(
+                        data,
+                        sortOutput.getDynamicSorter(),
+                        SectionPos.of(sectionPos),
+                        this.cameraPosition
+                );
             }
 
-            var job = result.render.getTaskCancellationToken();
+            var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+            var job = partition.taskCancellationTokens[partitionSectionIndex];
 
             // clear the cancellation token (thereby marking the section as not having an
             // active task) if this job is the most recent submitted job for this section
-            if (job != null && result.submitTime >= result.render.getLastSubmittedFrame()) {
-                result.render.setTaskCancellationToken(null);
+            if (job != null && result.submitTime >= UpdateStateUnsafe.getLastSubmittedFrame(pUpdateState)) {
+                partition.taskCancellationTokens[partitionSectionIndex] = null;
             }
 
-            result.render.setLastUploadFrame(result.submitTime);
+            UpdateStateUnsafe.setLastUploadFrame(pUpdateState, result.submitTime);
         }
 
         return touchedSectionInfo;
     }
 
-    private boolean updateSectionInfo(RenderSection render, BuiltSectionInfo info) {
-        var infoChanged = render.setInfo(info);
+    private boolean updateSectionInfo(
+            long sectionPos,
+            WorldPartition partition,
+            int partitionSectionIndex,
+            @NotNull BuiltSectionInfo info
+    ) {
+        var renderStateChanged = partition.setRenderState(partitionSectionIndex, info);
 
-        if (info == null || ArrayUtils.isEmpty(info.globalBlockEntities)) {
-            return this.sectionsWithGlobalEntities.remove(render) || infoChanged;
+        if (ArrayUtils.isEmpty(info.globalBlockEntities)) {
+            var prevGlobalBlockEntities = this.globalBlockEntities.remove(sectionPos);
+            return (prevGlobalBlockEntities != null) || renderStateChanged;
         } else {
-            return this.sectionsWithGlobalEntities.add(render) || infoChanged;
+            var prevGlobalBlockEntities = this.globalBlockEntities.put(sectionPos, info.globalBlockEntities);
+            return (prevGlobalBlockEntities == null) || renderStateChanged;
         }
     }
 
-    private static List<BuilderTaskOutput> filterChunkBuildResults(ArrayList<BuilderTaskOutput> outputs) {
-        var map = new Reference2ReferenceLinkedOpenHashMap<RenderSection, BuilderTaskOutput>();
+    private List<BuilderTaskOutput> filterChunkBuildResults(ArrayList<BuilderTaskOutput> outputs) {
+        var map = new Long2ReferenceLinkedOpenHashMap<BuilderTaskOutput>();
 
         for (var output : outputs) {
+            var section = output.section;
+            var partition = section.partition();
+
+            var pUpdateState = UpdateStateUnsafe.indexArray(
+                    partition.pUpdateStateArray,
+                    section.partitionSectionIndex()
+            );
+            var lastSubmittedFrame = UpdateStateUnsafe.getLastSubmittedFrame(pUpdateState);
+            var lastUploadFrame = UpdateStateUnsafe.getLastUploadFrame(pUpdateState);
+
             // throw out outdated or duplicate outputs
-            if (output.render.isDisposed() || output.render.getLastUploadFrame() > output.submitTime) {
+            if (lastSubmittedFrame != output.submitTime || lastUploadFrame > output.submitTime) {
                 continue;
             }
 
-            var render = output.render;
-            var previous = map.get(render);
-
+            var sectionPos = section.pos();
+            var previous = map.get(sectionPos);
             if (previous == null || previous.submitTime < output.submitTime) {
-                map.put(render, output);
+                map.put(sectionPos, output);
             }
         }
 
@@ -390,6 +442,7 @@ public class RenderSectionManager {
 
     public void cleanupAndFlip() {
         this.sectionCache.cleanup();
+        this.partitions.cleanup();
         this.regions.update();
     }
 
@@ -450,22 +503,30 @@ public class RenderSectionManager {
         var queue = this.taskLists.get(type);
 
         while (!queue.isEmpty() && collector.hasBudgetFor(type.getTaskEffort(), ignoreEffortCategory)) {
-            RenderSection section = queue.remove();
+            var section = queue.pop();
 
-            if (section.isDisposed()) {
+            var partition = section.partition();
+            var partitionSectionIndex = section.partitionSectionIndex();
+
+            var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+            var currentSectionUid = UpdateStateUnsafe.getSectionUid(pUpdateState);
+
+            // skip if section was disposed or replaced
+            if (section.uid() != currentSectionUid) {
                 continue;
             }
 
             // stop if the section is in this list but doesn't have this update type
-            var pendingUpdate = section.getPendingUpdate();
+            var pendingUpdate = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
             if (pendingUpdate != null && pendingUpdate != type) {
                 continue;
             }
 
+            var translucentData = partition.translucentDataArray[partitionSectionIndex];
             int frame = this.lastUpdatedFrame;
             ChunkBuilderTask<? extends BuilderTaskOutput> task;
             if (type == ChunkUpdateType.SORT || type == ChunkUpdateType.IMPORTANT_SORT) {
-                task = this.createSortTask(section, frame);
+                task = this.createSortTask(section, translucentData, frame);
 
                 if (task == null) {
                     // when a sort task is null it means the render section has no dynamic data and
@@ -473,7 +534,7 @@ public class RenderSectionManager {
                     continue;
                 }
             } else {
-                task = this.createRebuildTask(section, frame);
+                task = this.createRebuildTask(section, translucentData, frame);
 
                 if (task == null) {
                     // if the section is empty or doesn't exist submit this null-task to set the
@@ -486,11 +547,15 @@ public class RenderSectionManager {
                     // rebuild that must have happened in the meantime includes new non-dynamic
                     // index data.
                     var result = ChunkJobResult.successfully(new ChunkBuildOutput(
-                            section, frame, NoData.forEmptySection(section.getPosition()),
-                            BuiltSectionInfo.EMPTY, Collections.emptyMap()));
+                            section,
+                            frame,
+                            NoData.forEmptySection(SectionPos.of(section.pos())),
+                            BuiltSectionInfo.EMPTY,
+                            Collections.emptyMap()
+                    ));
                     this.buildResults.add(result);
 
-                    section.setTaskCancellationToken(null);
+                    partition.taskCancellationTokens[partitionSectionIndex] = null;
                 }
             }
 
@@ -498,26 +563,39 @@ public class RenderSectionManager {
                 var job = this.builder.scheduleTask(task, type.isImportant(), collector::onJobFinished);
                 collector.addSubmittedJob(job);
 
-                section.setTaskCancellationToken(job);
+                partition.taskCancellationTokens[partitionSectionIndex] = job;
             }
 
-            section.setLastSubmittedFrame(frame);
-            section.setPendingUpdate(null);
+            UpdateStateUnsafe.setLastSubmittedFrame(pUpdateState, frame);
+            UpdateStateUnsafe.setPendingUpdate(pUpdateState, null);
         }
     }
 
-    public @Nullable ChunkBuilderMeshingTask createRebuildTask(RenderSection render, int frame) {
-        ChunkRenderContext context = LevelSlice.prepare(this.level, render.getPosition(), this.sectionCache);
+    public @Nullable ChunkBuilderMeshingTask createRebuildTask(UniqueSectionRef section, TranslucentData translucentData, int frame) {
+        ChunkRenderContext context = LevelSlice.prepare(
+                this.level,
+                SectionPos.of(section.pos()),
+                this.sectionCache
+        );
 
         if (context == null) {
             return null;
         }
 
-        return new ChunkBuilderMeshingTask(render, frame, this.cameraPosition, context);
+        return new ChunkBuilderMeshingTask(
+                section,
+                translucentData,
+                frame,
+                this.cameraPosition,
+                context
+        );
     }
 
-    public ChunkBuilderSortingTask createSortTask(RenderSection render, int frame) {
-        return ChunkBuilderSortingTask.createTask(render, frame, this.cameraPosition);
+    public @Nullable ChunkBuilderSortingTask createSortTask(UniqueSectionRef section, TranslucentData translucentData, int frame) {
+        if (translucentData instanceof DynamicData dynamicData) {
+            return new ChunkBuilderSortingTask(section, frame, this.cameraPosition, dynamicData.getSorter());
+        }
+        return null;
     }
 
     public void processGFNIMovement(CameraMovement movement) {
@@ -543,12 +621,7 @@ public class RenderSectionManager {
             result.destroy(); // delete resources for any pending tasks (including those that were cancelled)
         }
 
-        for (var section : this.sectionByPosition.values()) {
-            section.delete();
-        }
-
-        this.sectionsWithGlobalEntities.clear();
-        this.resetRenderLists();
+        this.partitions.delete();
 
         try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
             this.regions.delete(commandList);
@@ -557,7 +630,7 @@ public class RenderSectionManager {
     }
 
     public int getTotalSections() {
-        return this.sectionByPosition.size();
+        return this.partitions.getTotalSections();
     }
 
     public int getVisibleChunkCount() {
@@ -573,19 +646,39 @@ public class RenderSectionManager {
     }
 
     public void scheduleSort(long sectionPos, boolean isDirectTrigger) {
-        RenderSection section = this.sectionByPosition.get(sectionPos);
+        int x = SectionPosUtil.unpackX(sectionPos);
+        int y = SectionPosUtil.unpackY(sectionPos);
+        int z = SectionPosUtil.unpackZ(sectionPos);
 
-        if (section != null) {
-            var pendingUpdate = ChunkUpdateType.SORT;
-            var priorityMode = SodiumClientMod.options().performance.getSortBehavior().getPriorityMode();
-            if (priorityMode == PriorityMode.ALL
-                    || priorityMode == PriorityMode.NEARBY && this.shouldPrioritizeTask(section, NEARBY_SORT_DISTANCE)) {
-                pendingUpdate = ChunkUpdateType.IMPORTANT_SORT;
-            }
-            pendingUpdate = ChunkUpdateType.getPromotionUpdateType(section.getPendingUpdate(), pendingUpdate);
-            if (pendingUpdate != null) {
-                section.setPendingUpdate(pendingUpdate);
-                section.prepareTrigger(isDirectTrigger);
+        var partition = this.partitions.get(x, y, z);
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
+
+        var sectionFlags = partition.flagsArray[partitionSectionIndex];
+
+        if (sectionFlags == RenderSectionFlags.UNINITIALIZED) {
+            // This really shouldn't ever hit? I'm not sure if this is necessary
+            throw new IllegalStateException("section must be initialized to schedule sort");
+//            return;
+        }
+        
+        var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+        var currentUpdate = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
+
+        var pendingUpdate = ChunkUpdateType.SORT;
+
+        var priorityMode = SodiumClientMod.options().performance.getSortBehavior().getPriorityMode();
+        if ((priorityMode == PriorityMode.ALL)
+                || ((priorityMode == PriorityMode.NEARBY) && this.shouldPrioritizeTask(x, y, z, NEARBY_SORT_DISTANCE))) {
+            pendingUpdate = ChunkUpdateType.IMPORTANT_SORT;
+        }
+        
+        pendingUpdate = ChunkUpdateType.getPromotionUpdateType(currentUpdate, pendingUpdate);
+        if (pendingUpdate != null) {
+            UpdateStateUnsafe.setPendingUpdate(pUpdateState, pendingUpdate);
+            
+            var translucentData = partition.translucentDataArray[partitionSectionIndex];
+            if (translucentData != null) {
+                translucentData.prepareTrigger(isDirectTrigger);
             }
         }
     }
@@ -595,32 +688,41 @@ public class RenderSectionManager {
 
         this.sectionCache.invalidate(x, y, z);
 
-        RenderSection section = this.sectionByPosition.get(SectionPos.asLong(x, y, z));
+        var partition = this.partitions.get(x, y, z);
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
 
-        if (section != null && section.isBuilt()) {
-            ChunkUpdateType pendingUpdate;
+        var sectionFlags = partition.flagsArray[partitionSectionIndex];
 
-            if (allowImportantRebuilds() && (important || this.shouldPrioritizeTask(section, NEARBY_REBUILD_DISTANCE))) {
-                pendingUpdate = ChunkUpdateType.IMPORTANT_REBUILD;
-            } else {
-                pendingUpdate = ChunkUpdateType.REBUILD;
-            }
+        if (!RenderSectionFlags.isBuilt(sectionFlags)) {
+            return;
+        }
 
-            pendingUpdate = ChunkUpdateType.getPromotionUpdateType(section.getPendingUpdate(), pendingUpdate);
-            if (pendingUpdate != null) {
-                section.setPendingUpdate(pendingUpdate);
+        var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+        var currentUpdate = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
+        
+        ChunkUpdateType pendingUpdate;
 
-                // force update to schedule rebuild task on this section
-                this.needsGraphUpdate = true;
-            }
+        if (allowImportantRebuilds() && (important || this.shouldPrioritizeTask(x, y, z, NEARBY_REBUILD_DISTANCE))) {
+            pendingUpdate = ChunkUpdateType.IMPORTANT_REBUILD;
+        } else {
+            pendingUpdate = ChunkUpdateType.REBUILD;
+        }
+
+        pendingUpdate = ChunkUpdateType.getPromotionUpdateType(currentUpdate, pendingUpdate);
+        if (pendingUpdate != null) {
+            UpdateStateUnsafe.setPendingUpdate(pUpdateState, pendingUpdate);
+
+            // force update to schedule rebuild task on this section
+            this.needsGraphUpdate = true;
         }
     }
 
     private static final float NEARBY_REBUILD_DISTANCE = Mth.square(16.0f);
     private static final float NEARBY_SORT_DISTANCE = Mth.square(25.0f);
 
-    private boolean shouldPrioritizeTask(RenderSection section, float distance) {
-        return this.cameraBlockPos != null && section.getSquaredDistance(this.cameraBlockPos) < distance;
+    private boolean shouldPrioritizeTask(int x, int y, int z, float distance) {
+        return this.cameraBlockPos != null
+                && SectionPosUtil.getSquaredDistance(x, y, z, this.cameraBlockPos) < distance;
     }
 
     private static boolean allowImportantRebuilds() {
@@ -643,34 +745,6 @@ public class RenderSectionManager {
 
     private float getRenderDistance() {
         return this.renderDistance * 16.0f;
-    }
-
-    private void connectNeighborNodes(RenderSection render) {
-        for (int direction = 0; direction < GraphDirection.COUNT; direction++) {
-            RenderSection adj = this.getRenderSection(render.getChunkX() + GraphDirection.x(direction),
-                    render.getChunkY() + GraphDirection.y(direction),
-                    render.getChunkZ() + GraphDirection.z(direction));
-
-            if (adj != null) {
-                adj.setAdjacentNode(GraphDirection.opposite(direction), render);
-                render.setAdjacentNode(direction, adj);
-            }
-        }
-    }
-
-    private void disconnectNeighborNodes(RenderSection render) {
-        for (int direction = 0; direction < GraphDirection.COUNT; direction++) {
-            RenderSection adj = render.getAdjacent(direction);
-
-            if (adj != null) {
-                adj.setAdjacentNode(GraphDirection.opposite(direction), null);
-                render.setAdjacentNode(direction, null);
-            }
-        }
-    }
-
-    private RenderSection getRenderSection(int x, int y, int z) {
-        return this.sectionByPosition.get(SectionPos.asLong(x, y, z));
     }
 
     public Collection<String> getDebugStrings() {
@@ -727,23 +801,31 @@ public class RenderSectionManager {
     }
 
     public boolean isSectionBuilt(int x, int y, int z) {
-        var section = this.getRenderSection(x, y, z);
-        return section != null && section.isBuilt();
+        var partition = this.partitions.get(x, y, z);
+
+        if (partition == null) {
+            return false;
+        }
+
+        var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
+        return RenderSectionFlags.isBuilt(partition.flagsArray[partitionSectionIndex]);
     }
 
     public void onChunkAdded(int x, int z) {
+        // TODO: hoist some of the variables in onSectionAdded out of this loop
         for (int y = this.level.getMinSectionY(); y <= this.level.getMaxSectionY(); y++) {
             this.onSectionAdded(x, y, z);
         }
     }
 
     public void onChunkRemoved(int x, int z) {
+        // TODO: hoist some of the variables in onSectionRemoved out of this loop
         for (int y = this.level.getMinSectionY(); y <= this.level.getMaxSectionY(); y++) {
             this.onSectionRemoved(x, y, z);
         }
     }
 
-    public Collection<RenderSection> getSectionsWithGlobalEntities() {
-        return ReferenceSets.unmodifiable(this.sectionsWithGlobalEntities);
+    public Iterable<BlockEntity[]> getGlobalBlockEntities() {
+        return this.globalBlockEntities.values();
     }
 }

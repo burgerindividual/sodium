@@ -1,25 +1,25 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.occlusion;
 
-import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.caffeinemc.mods.sodium.client.util.SectionPosUtil;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartitionManager;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
-import net.caffeinemc.mods.sodium.client.util.collections.DoubleBufferedQueue;
-import net.caffeinemc.mods.sodium.client.util.collections.ReadQueue;
-import net.caffeinemc.mods.sodium.client.util.collections.WriteQueue;
+import net.caffeinemc.mods.sodium.client.util.collections.DoubleBufferedLongQueue;
+import net.caffeinemc.mods.sodium.client.util.collections.LongReadQueue;
+import net.caffeinemc.mods.sodium.client.util.collections.LongWriteQueue;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 
 public class OcclusionCuller {
-    private final Long2ReferenceMap<RenderSection> sections;
+    private final WorldPartitionManager partitions;
     private final Level level;
 
-    private final DoubleBufferedQueue<RenderSection> queue = new DoubleBufferedQueue<>();
+    private final DoubleBufferedLongQueue queue = new DoubleBufferedLongQueue();
 
-    public OcclusionCuller(Long2ReferenceMap<RenderSection> sections, Level level) {
-        this.sections = sections;
+    public OcclusionCuller(WorldPartitionManager partitions, Level level) {
+        this.partitions = partitions;
         this.level = level;
     }
 
@@ -46,13 +46,17 @@ public class OcclusionCuller {
                                      float searchDistance,
                                      boolean useOcclusionCulling,
                                      int frame,
-                                     ReadQueue<RenderSection> readQueue,
-                                     WriteQueue<RenderSection> writeQueue)
+                                     LongReadQueue readQueue,
+                                     LongWriteQueue writeQueue)
     {
-        RenderSection section;
+        while (readQueue.isEmpty()) {
+            long sectionPos = readQueue.dequeue();
 
-        while ((section = readQueue.dequeue()) != null) {
-            if (!isSectionVisible(section, viewport, searchDistance)) {
+            int x = SectionPosUtil.unpackX(sectionPos);
+            int y = SectionPosUtil.unpackY(sectionPos);
+            int z = SectionPosUtil.unpackZ(sectionPos);
+
+            if (!isSectionVisible(viewport, searchDistance, x, y, z)) {
                 continue;
             }
 
@@ -66,7 +70,7 @@ public class OcclusionCuller {
 
                     // occlude paths through the section if it's being viewed at an angle where
                     // the other side can't possibly be seen
-                    sectionVisibilityData &= getAngleVisibilityMask(viewport, section);
+                    sectionVisibilityData &= getAngleVisibilityMask(viewport, x, y, z);
 
                     // When using occlusion culling, we can only traverse into neighbors for which there is a path of
                     // visibility through this chunk. This is determined by taking all the incoming paths to this chunk and
@@ -90,11 +94,11 @@ public class OcclusionCuller {
     private static final long NORTH_SOUTH_OCCLUDED = (1L << VisibilityEncoding.bit(GraphDirection.NORTH, GraphDirection.SOUTH)) | (1L << VisibilityEncoding.bit(GraphDirection.SOUTH, GraphDirection.NORTH));
     private static final long WEST_EAST_OCCLUDED = (1L << VisibilityEncoding.bit(GraphDirection.WEST, GraphDirection.EAST)) | (1L << VisibilityEncoding.bit(GraphDirection.EAST, GraphDirection.WEST));
 
-    private static long getAngleVisibilityMask(Viewport viewport, RenderSection section) {
+    private static long getAngleVisibilityMask(Viewport viewport, int x, int y, int z) {
         var transform = viewport.getTransform();
-        var dx = Math.abs(transform.x - section.getCenterX());
-        var dy = Math.abs(transform.y - section.getCenterY());
-        var dz = Math.abs(transform.z - section.getCenterZ());
+        var dx = Math.abs(transform.x - SectionPosUtil.centerCoord(x));
+        var dy = Math.abs(transform.y - SectionPosUtil.centerCoord(y));
+        var dz = Math.abs(transform.z - SectionPosUtil.centerCoord(z));
 
         var angleOcclusionMask = 0L;
         if (dx > dy || dz > dy) {
@@ -110,11 +114,12 @@ public class OcclusionCuller {
         return ~angleOcclusionMask;
     }
 
-    private static boolean isSectionVisible(RenderSection section, Viewport viewport, float maxDistance) {
-        return isWithinRenderDistance(viewport.getTransform(), section, maxDistance) && isWithinFrustum(viewport, section);
+    private static boolean isSectionVisible(Viewport viewport, float maxDistance, int x, int y, int z) {
+        return isWithinRenderDistance(viewport.getTransform(), maxDistance, x, y, z)
+                && isWithinFrustum(viewport, x, y, z);
     }
 
-    private static void visitNeighbors(final WriteQueue<RenderSection> queue, RenderSection section, int outgoing, int frame) {
+    private static void visitNeighbors(final LongWriteQueue queue, RenderSection section, int outgoing, int frame) {
         // Only traverse into neighbors which are actually present.
         // This avoids a null-check on each invocation to enqueue, and since the compiler will see that a null
         // is never encountered (after profiling), it will optimize it away.
@@ -153,7 +158,7 @@ public class OcclusionCuller {
         }
     }
 
-    private static void visitNode(final WriteQueue<RenderSection> queue, @NotNull RenderSection render, int incoming, int frame) {
+    private static void visitNode(final LongWriteQueue queue, @NotNull RenderSection render, int incoming, int frame) {
         if (render.getLastVisibleFrame() != frame) {
             // This is the first time we are visiting this section during the given frame, so we must
             // reset the state.
@@ -166,26 +171,26 @@ public class OcclusionCuller {
         render.addIncomingDirections(incoming);
     }
 
-    private static int getOutwardDirections(SectionPos origin, RenderSection section) {
+    private static int getOutwardDirections(SectionPos origin, int x, int y, int z) {
         int planes = 0;
 
-        planes |= section.getChunkX() <= origin.getX() ? 1 << GraphDirection.WEST  : 0;
-        planes |= section.getChunkX() >= origin.getX() ? 1 << GraphDirection.EAST  : 0;
+        planes |= x <= origin.getX() ? 1 << GraphDirection.WEST  : 0;
+        planes |= x >= origin.getX() ? 1 << GraphDirection.EAST  : 0;
 
-        planes |= section.getChunkY() <= origin.getY() ? 1 << GraphDirection.DOWN  : 0;
-        planes |= section.getChunkY() >= origin.getY() ? 1 << GraphDirection.UP    : 0;
+        planes |= y <= origin.getY() ? 1 << GraphDirection.DOWN  : 0;
+        planes |= y >= origin.getY() ? 1 << GraphDirection.UP    : 0;
 
-        planes |= section.getChunkZ() <= origin.getZ() ? 1 << GraphDirection.NORTH : 0;
-        planes |= section.getChunkZ() >= origin.getZ() ? 1 << GraphDirection.SOUTH : 0;
+        planes |= z <= origin.getZ() ? 1 << GraphDirection.NORTH : 0;
+        planes |= z >= origin.getZ() ? 1 << GraphDirection.SOUTH : 0;
 
         return planes;
     }
 
-    private static boolean isWithinRenderDistance(CameraTransform camera, RenderSection section, float maxDistance) {
+    private static boolean isWithinRenderDistance(CameraTransform camera, float maxDistance, int x, int y, int z) {
         // origin point of the chunk's bounding box (in view space)
-        int ox = section.getOriginX() - camera.intX;
-        int oy = section.getOriginY() - camera.intY;
-        int oz = section.getOriginZ() - camera.intZ;
+        int ox = SectionPosUtil.originCoord(x) - camera.intX;
+        int oy = SectionPosUtil.originCoord(y) - camera.intY;
+        int oz = SectionPosUtil.originCoord(z) - camera.intZ;
 
         // coordinates of the point to compare (in view space)
         // this is the closest point within the bounding box to the center (0, 0, 0)
@@ -214,17 +219,29 @@ public class OcclusionCuller {
     private static final float CHUNK_SECTION_RADIUS = 8.0f /* chunk bounds */;
     private static final float CHUNK_SECTION_SIZE = CHUNK_SECTION_RADIUS + 1.0f /* maximum model extent */ + 0.125f /* epsilon */;
 
-    public static boolean isWithinFrustum(Viewport viewport, RenderSection section) {
-        return viewport.isBoxVisible(section.getCenterX(), section.getCenterY(), section.getCenterZ(),
-                CHUNK_SECTION_SIZE, CHUNK_SECTION_SIZE, CHUNK_SECTION_SIZE);
+    public static boolean isWithinFrustum(Viewport viewport, int x, int y, int z) {
+        return viewport.isBoxVisible(
+                SectionPosUtil.centerCoord(x),
+                SectionPosUtil.centerCoord(y),
+                SectionPosUtil.centerCoord(z),
+                CHUNK_SECTION_SIZE,
+                CHUNK_SECTION_SIZE,
+                CHUNK_SECTION_SIZE
+        );
     }
 
     // this bigger chunk section size is only used for frustum-testing nearby sections with large models
     private static final float CHUNK_SECTION_SIZE_NEARBY = CHUNK_SECTION_RADIUS + 2.0f /* bigger model extent */ + 0.125f /* epsilon */;
     
-    public static boolean isWithinNearbySectionFrustum(Viewport viewport, RenderSection section) {
-        return viewport.isBoxVisible(section.getCenterX(), section.getCenterY(), section.getCenterZ(),
-                CHUNK_SECTION_SIZE_NEARBY, CHUNK_SECTION_SIZE_NEARBY, CHUNK_SECTION_SIZE_NEARBY);
+    public static boolean isWithinNearbySectionFrustum(Viewport viewport, int x, int y, int z) {
+        return viewport.isBoxVisible(
+                SectionPosUtil.centerCoord(x), 
+                SectionPosUtil.centerCoord(y),
+                SectionPosUtil.centerCoord(z),
+                CHUNK_SECTION_SIZE_NEARBY,
+                CHUNK_SECTION_SIZE_NEARBY,
+                CHUNK_SECTION_SIZE_NEARBY
+        );
     }
 
     // This method visits sections near the origin that are not in the path of the graph traversal
@@ -260,7 +277,7 @@ public class OcclusionCuller {
     }
 
     private void init(Visitor visitor,
-                      WriteQueue<RenderSection> queue,
+                      LongWriteQueue queue,
                       Viewport viewport,
                       float searchDistance,
                       boolean useOcclusionCulling,
@@ -281,7 +298,7 @@ public class OcclusionCuller {
         }
     }
 
-    private void initWithinWorld(Visitor visitor, WriteQueue<RenderSection> queue, Viewport viewport, boolean useOcclusionCulling, int frame) {
+    private void initWithinWorld(Visitor visitor, LongWriteQueue queue, Viewport viewport, boolean useOcclusionCulling, int frame) {
         var origin = viewport.getChunkCoord();
         var section = this.getRenderSection(origin.getX(), origin.getY(), origin.getZ());
 
@@ -311,7 +328,7 @@ public class OcclusionCuller {
     // Enqueues sections that are inside the viewport using diamond spiral iteration to avoid sorting and ensure a
     // consistent order. Innermost layers are enqueued first. Within each layer, iteration starts at the northernmost
     // section and proceeds counterclockwise (N->W->S->E).
-    private void initOutsideWorldHeight(WriteQueue<RenderSection> queue,
+    private void initOutsideWorldHeight(LongWriteQueue queue,
                                         Viewport viewport,
                                         float searchDistance,
                                         int frame,
@@ -363,18 +380,12 @@ public class OcclusionCuller {
         }
     }
 
-    private void tryVisitNode(WriteQueue<RenderSection> queue, int x, int y, int z, int direction, int frame, Viewport viewport) {
-        RenderSection section = this.getRenderSection(x, y, z);
-
-        if (section == null || !isWithinFrustum(viewport, section)) {
+    private void tryVisitNode(LongWriteQueue queue, int x, int y, int z, int direction, int frame, Viewport viewport) {
+        if (section == null || !isWithinFrustum(viewport, x, y, z)) {
             return;
         }
 
         visitNode(queue, section, GraphDirectionSet.of(direction), frame);
-    }
-
-    private RenderSection getRenderSection(int x, int y, int z) {
-        return this.sections.get(SectionPos.asLong(x, y, z));
     }
 
     public interface Visitor {

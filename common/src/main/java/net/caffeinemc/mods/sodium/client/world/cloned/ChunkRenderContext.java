@@ -1,6 +1,5 @@
 package net.caffeinemc.mods.sodium.client.world.cloned;
 
-import net.caffeinemc.mods.sodium.client.services.SodiumModelDataContainer;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 

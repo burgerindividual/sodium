@@ -1,8 +1,9 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.lists;
 
-import net.caffeinemc.mods.sodium.client.render.chunk.LocalSectionIndex;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionFlags;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.PartitionSectionIndex;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartition;
+import net.caffeinemc.mods.sodium.client.render.chunk.region.RegionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.util.iterator.ByteArrayIterator;
 import net.caffeinemc.mods.sodium.client.util.iterator.ByteIterator;
@@ -15,6 +16,8 @@ import java.util.Arrays;
 
 public class ChunkRenderList {
     private final RenderRegion region;
+    private final WorldPartition partition;
+    private final int partitionRegionOffset;
 
     private final byte[] sectionsWithGeometry = new byte[RenderRegion.REGION_SIZE];
     private final long[] sectionsWithGeometryMap = new long[RenderRegion.REGION_SIZE / Long.SIZE];
@@ -35,8 +38,10 @@ public class ChunkRenderList {
 
     private int lastVisibleFrame;
 
-    public ChunkRenderList(RenderRegion region) {
+    public ChunkRenderList(RenderRegion region, WorldPartition partition) {
         this.region = region;
+        this.partition = partition;
+        this.partitionRegionOffset = PartitionSectionIndex.getRegionOffset(region.getY());
     }
 
     public void reset(int frame) {
@@ -98,9 +103,9 @@ public class ChunkRenderList {
                 var index = Long.numberOfTrailingZeros(map) + mapOffset;
                 map &= map - 1;
 
-                var x = Math.abs(LocalSectionIndex.unpackX(index) - relativeCameraSectionX);
-                var y = Math.abs(LocalSectionIndex.unpackY(index) - relativeCameraSectionY);
-                var z = Math.abs(LocalSectionIndex.unpackZ(index) - relativeCameraSectionZ);
+                var x = Math.abs(RegionSectionIndex.unpackX(index) - relativeCameraSectionX);
+                var y = Math.abs(RegionSectionIndex.unpackY(index) - relativeCameraSectionY);
+                var z = Math.abs(RegionSectionIndex.unpackZ(index) - relativeCameraSectionZ);
 
                 var distance = x + y + z;
                 histogram[distance]++;
@@ -120,25 +125,22 @@ public class ChunkRenderList {
         }
     }
 
-    public void add(RenderSection render) {
+    public void add(int regionSectionIndex, int flags) {
         if (this.size >= RenderRegion.REGION_SIZE) {
             throw new ArrayIndexOutOfBoundsException("Render list is full");
         }
 
         this.size++;
 
-        int index = render.getSectionIndex();
-        int flags = render.getFlags();
-
-        if (((flags >>> RenderSectionFlags.HAS_BLOCK_GEOMETRY) & 1) == 1) {
-            this.sectionsWithGeometryMap[index >> 6] |= 1L << (index & 0b111111);
+        if ((flags & (1 << RenderSectionFlags.HAS_BLOCK_GEOMETRY)) != 0) {
+            this.sectionsWithGeometryMap[regionSectionIndex >> 6] |= 1L << (regionSectionIndex & 0b111111);
             this.sectionsWithGeometryCount++;
         }
 
-        this.sectionsWithSprites[this.sectionsWithSpritesCount] = (byte) index;
+        this.sectionsWithSprites[this.sectionsWithSpritesCount] = (byte) regionSectionIndex;
         this.sectionsWithSpritesCount += (flags >>> RenderSectionFlags.HAS_ANIMATED_SPRITES) & 1;
 
-        this.sectionsWithEntities[this.sectionsWithEntitiesCount] = (byte) index;
+        this.sectionsWithEntities[this.sectionsWithEntitiesCount] = (byte) regionSectionIndex;
         this.sectionsWithEntitiesCount += (flags >>> RenderSectionFlags.HAS_BLOCK_ENTITIES) & 1;
     }
 
@@ -184,6 +186,14 @@ public class ChunkRenderList {
 
     public RenderRegion getRegion() {
         return this.region;
+    }
+
+    public WorldPartition getPartition() {
+        return this.partition;
+    }
+
+    public int getPartitionRegionOffset() {
+        return this.partitionRegionOffset;
     }
 
     public int size() {

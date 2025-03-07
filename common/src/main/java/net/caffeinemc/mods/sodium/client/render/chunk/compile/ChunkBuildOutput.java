@@ -1,6 +1,5 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.compile;
 
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionMeshParts;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
@@ -19,9 +18,9 @@ public class ChunkBuildOutput extends ChunkSortOutput {
     public final TranslucentData translucentData;
     public final Map<TerrainRenderPass, BuiltSectionMeshParts> meshes;
 
-    public ChunkBuildOutput(RenderSection render, int buildTime, TranslucentData translucentData, BuiltSectionInfo info,
-            Map<TerrainRenderPass, BuiltSectionMeshParts> meshes) {
-        super(render, buildTime);
+    public ChunkBuildOutput(UniqueSectionRef section, int submitTime, TranslucentData translucentData, BuiltSectionInfo info,
+                            Map<TerrainRenderPass, BuiltSectionMeshParts> meshes) {
+        super(section, submitTime);
 
         this.info = info;
         this.translucentData = translucentData;

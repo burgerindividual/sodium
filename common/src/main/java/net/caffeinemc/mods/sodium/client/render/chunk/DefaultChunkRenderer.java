@@ -14,6 +14,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.data.SectionRenderDataStor
 import net.caffeinemc.mods.sodium.client.render.chunk.data.SectionRenderDataUnsafe;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderListIterable;
+import net.caffeinemc.mods.sodium.client.render.chunk.region.RegionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.shader.ChunkShaderInterface;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
@@ -128,9 +129,9 @@ public class DefaultChunkRenderer extends ShaderChunkRenderer {
 
             var pMeshData = renderDataStorage.getDataPointer(sectionIndex);
 
-            int chunkX = originX + LocalSectionIndex.unpackX(sectionIndex);
-            int chunkY = originY + LocalSectionIndex.unpackY(sectionIndex);
-            int chunkZ = originZ + LocalSectionIndex.unpackZ(sectionIndex);
+            int chunkX = originX + RegionSectionIndex.unpackX(sectionIndex);
+            int chunkY = originY + RegionSectionIndex.unpackY(sectionIndex);
+            int chunkZ = originZ + RegionSectionIndex.unpackZ(sectionIndex);
 
             // The bit field of "visible" geometry sets which should be rendered
             int slices;

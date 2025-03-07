@@ -1,6 +1,5 @@
 package net.caffeinemc.mods.sodium.client.render.chunk.compile;
 
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.DynamicTopoData;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.Sorter;
 
@@ -8,12 +7,12 @@ public class ChunkSortOutput extends BuilderTaskOutput {
     private Sorter sorter;
     private boolean reuseUploadedIndexData;
 
-    public ChunkSortOutput(RenderSection render, int buildTime) {
-        super(render, buildTime);
+    public ChunkSortOutput(UniqueSectionRef section, int submitTime) {
+        super(section, submitTime);
     }
 
-    public ChunkSortOutput(RenderSection render, int buildTime, Sorter data) {
-        this(render, buildTime);
+    public ChunkSortOutput(UniqueSectionRef section, int submitTime, Sorter data) {
+        this(section, submitTime);
         this.setSorter(data);
     }
 

@@ -23,11 +23,11 @@ public class BitArray {
     }
 
     public boolean get(int index) {
-        return (this.words[wordIndex(index)] & 1L << bitIndex(index)) != 0;
+        return (this.words[wordIndex(index)] & (1L << bitIndex(index))) != 0;
     }
 
     public void set(int index) {
-        this.words[wordIndex(index)] |= 1L << bitIndex(index);
+        this.words[wordIndex(index)] |= (1L << bitIndex(index));
     }
 
     public void unset(int index) {

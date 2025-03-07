@@ -1,10 +1,19 @@
-package net.caffeinemc.mods.sodium.client.render.chunk;
+package net.caffeinemc.mods.sodium.client.render.chunk.partition;
 
-public class LocalSectionIndex {
-    // XZY order
-    private static final int X_BITS = 0b111, X_OFFSET = 5, X_MASK = X_BITS << X_OFFSET;
-    private static final int Y_BITS = 0b11, Y_OFFSET = 0, Y_MASK = Y_BITS << Y_OFFSET;
-    private static final int Z_BITS = 0b111, Z_OFFSET = 2, Z_MASK = Z_BITS << Z_OFFSET;
+public class PartitionSectionIndex {
+    // YZX order
+    private static final int X_BITS = WorldPartition.PARTITION_WIDTH_M, X_OFFSET = 0, X_MASK = X_BITS << X_OFFSET;
+    private static final int Y_BITS = WorldPartition.PARTITION_HEIGHT_M, Y_OFFSET = 6, Y_MASK = Y_BITS << Y_OFFSET;
+    private static final int Z_BITS = WorldPartition.PARTITION_LENGTH_M, Z_OFFSET = 3, Z_MASK = Z_BITS << Z_OFFSET;
+
+    // MUST BE CHANGED IF THE PARTITION SIZE CHANGES
+    public static int getRegionOffset(int regionY) {
+        return (regionY & 1) << 8;
+    }
+
+    public static int fromRegion(int regionSectionIndex, int regionOffset) {
+        return regionSectionIndex | regionOffset;
+    }
 
     public static int pack(int x, int y, int z) {
         return ((x & X_BITS) << X_OFFSET) | ((y & Y_BITS) << Y_OFFSET) | ((z & Z_BITS) << Z_OFFSET);

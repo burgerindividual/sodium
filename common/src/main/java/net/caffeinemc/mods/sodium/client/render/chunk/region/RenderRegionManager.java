@@ -10,11 +10,11 @@ import net.caffeinemc.mods.sodium.client.gl.arena.staging.MappedStagingBuffer;
 import net.caffeinemc.mods.sodium.client.gl.arena.staging.StagingBuffer;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.BuilderTaskOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkBuildOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.ChunkSortOutput;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionMeshParts;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartition;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.data.SharedIndexSorter;
@@ -67,25 +67,26 @@ public class RenderRegionManager {
         var indexUploads = new ArrayList<PendingSectionIndexBufferUpload>();
 
         for (BuilderTaskOutput result : results) {
-            int renderSectionIndex = result.render.getSectionIndex();
+            int regionSectionIndex = result.section.regionSectionIndex();
 
-            if (result.render.isDisposed()) {
-                throw new IllegalStateException("Render section is disposed");
-            }
+            // TODO: check against unique key and check if uninitialized
+//            if (result.render.isDisposed()) {
+//                throw new IllegalStateException("Render section is disposed");
+//            }
 
             if (result instanceof ChunkBuildOutput chunkBuildOutput) {
                 for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
                     var storage = region.getStorage(pass);
 
                     if (storage != null) {
-                        storage.removeVertexData(renderSectionIndex);
+                        storage.removeVertexData(regionSectionIndex);
                         region.clearCachedBatchFor(pass);
                     }
 
                     BuiltSectionMeshParts mesh = chunkBuildOutput.getMesh(pass);
 
                     if (mesh != null) {
-                        uploads.add(new PendingSectionMeshUpload(result.render, mesh, pass,
+                        uploads.add(new PendingSectionMeshUpload(regionSectionIndex, mesh, pass,
                                 new PendingUpload(mesh.getVertexData())));
                     }
                 }
@@ -95,18 +96,18 @@ public class RenderRegionManager {
                 var sorter = indexDataOutput.getSorter();
                 if (sorter instanceof SharedIndexSorter sharedIndexSorter) {
                     var storage = region.createStorage(DefaultTerrainRenderPasses.TRANSLUCENT);
-                    storage.removeIndexData(renderSectionIndex);
+                    storage.removeIndexData(regionSectionIndex);
 
                     // clear batch cache if it's newly using the shared index buffer and was not previously.
                     // updates to the shared index buffer which cause the batch cache to be invalidated are handled with needsSharedIndexUpdate
-                    if (storage.setSharedIndexUsage(renderSectionIndex, sharedIndexSorter.quadCount())) {
+                    if (storage.setSharedIndexUsage(regionSectionIndex, sharedIndexSorter.quadCount())) {
                         region.clearCachedBatchFor(DefaultTerrainRenderPasses.TRANSLUCENT);
                     }
                 } else {
                     var storage = region.getStorage(DefaultTerrainRenderPasses.TRANSLUCENT);
                     if (storage != null) {
-                        storage.removeIndexData(renderSectionIndex);
-                        storage.setSharedIndexUsage(renderSectionIndex, 0);
+                        storage.removeIndexData(regionSectionIndex);
+                        storage.setSharedIndexUsage(regionSectionIndex, 0);
 
                         // always clear batch cache on uploads of new index data
                         region.clearCachedBatchFor(DefaultTerrainRenderPasses.TRANSLUCENT);
@@ -121,7 +122,7 @@ public class RenderRegionManager {
                         continue;
                     }
 
-                    indexUploads.add(new PendingSectionIndexBufferUpload(result.render, new PendingUpload(buffer)));
+                    indexUploads.add(new PendingSectionIndexBufferUpload(regionSectionIndex, new PendingUpload(buffer)));
                 }
             }
         }
@@ -154,7 +155,7 @@ public class RenderRegionManager {
             // Collect the upload results
             for (PendingSectionMeshUpload upload : uploads) {
                 var storage = region.createStorage(upload.pass);
-                storage.setVertexData(upload.section.getSectionIndex(),
+                storage.setVertexData(upload.regionSectionIndex,
                         upload.vertexUpload.getResult(), upload.meshData.getVertexSegments());
             }
         }
@@ -169,7 +170,7 @@ public class RenderRegionManager {
 
             for (PendingSectionIndexBufferUpload upload : indexUploads) {
                 var storage = region.createStorage(DefaultTerrainRenderPasses.TRANSLUCENT);
-                storage.setIndexData(upload.section.getSectionIndex(), upload.indexBufferUpload.getResult());
+                storage.setIndexData(upload.regionSectionIndex, upload.indexBufferUpload.getResult());
             }
         }
 
@@ -189,7 +190,10 @@ public class RenderRegionManager {
         var map = new Reference2ReferenceOpenHashMap<RenderRegion, List<BuilderTaskOutput>>();
 
         for (var result : results) {
-            var queue = map.computeIfAbsent(result.render.getRegion(), k -> new ArrayList<>());
+            var queue = map.computeIfAbsent(
+                    result.section.region(),
+                    k -> new ArrayList<>()
+            );
             queue.add(result);
         }
 
@@ -213,28 +217,34 @@ public class RenderRegionManager {
         return this.stagingBuffer;
     }
 
-    public RenderRegion createForChunk(int chunkX, int chunkY, int chunkZ) {
+    public RenderRegion createForChunk(int chunkX, int chunkY, int chunkZ, WorldPartition partition) {
         return this.create(chunkX >> RenderRegion.REGION_WIDTH_SH,
                 chunkY >> RenderRegion.REGION_HEIGHT_SH,
-                chunkZ >> RenderRegion.REGION_LENGTH_SH);
+                chunkZ >> RenderRegion.REGION_LENGTH_SH,
+                partition);
     }
 
     @NotNull
-    private RenderRegion create(int x, int y, int z) {
+    private RenderRegion create(int x, int y, int z, WorldPartition partition) {
         var key = RenderRegion.key(x, y, z);
         var instance = this.regions.get(key);
 
         if (instance == null) {
-            this.regions.put(key, instance = new RenderRegion(x, y, z, this.stagingBuffer));
+            this.regions.put(key, instance = new RenderRegion(x, y, z, partition, this.stagingBuffer));
         }
 
         return instance;
     }
 
-    private record PendingSectionMeshUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload vertexUpload) {
+    public RenderRegion get(int x, int y, int z) {
+        var key = RenderRegion.key(x, y, z);
+        return this.regions.get(key);
     }
 
-    private record PendingSectionIndexBufferUpload(RenderSection section, PendingUpload indexBufferUpload) {
+    private record PendingSectionMeshUpload(int regionSectionIndex, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload vertexUpload) {
+    }
+
+    private record PendingSectionIndexBufferUpload(int regionSectionIndex, PendingUpload indexBufferUpload) {
     }
 
     private static StagingBuffer createStagingBuffer(CommandList commandList) {

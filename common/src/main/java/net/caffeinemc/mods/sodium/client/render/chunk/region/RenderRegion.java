@@ -8,9 +8,9 @@ import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.MultiDrawBatch;
 import net.caffeinemc.mods.sodium.client.gl.tessellation.GlTessellation;
 import net.caffeinemc.mods.sodium.client.model.quad.properties.ModelQuadFacing;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.SectionRenderDataStorage;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartition;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.TerrainRenderPass;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkMeshFormats;
@@ -18,7 +18,6 @@ import net.caffeinemc.mods.sodium.client.util.MathUtil;
 import net.minecraft.core.SectionPos;
 import org.apache.commons.lang3.Validate;
 
-import java.util.Arrays;
 import java.util.Map;
 
 public class RenderRegion {
@@ -47,7 +46,6 @@ public class RenderRegion {
 
     private final ChunkRenderList renderList;
 
-    private final RenderSection[] sections = new RenderSection[RenderRegion.REGION_SIZE];
     private int sectionCount;
 
     private final Map<TerrainRenderPass, SectionRenderDataStorage> sectionRenderData = new Reference2ReferenceOpenHashMap<>();
@@ -55,13 +53,13 @@ public class RenderRegion {
 
     private final Map<TerrainRenderPass, MultiDrawBatch> cachedBatches = new Reference2ReferenceOpenHashMap<>();
 
-    public RenderRegion(int x, int y, int z, StagingBuffer stagingBuffer) {
+    public RenderRegion(int x, int y, int z, WorldPartition partition, StagingBuffer stagingBuffer) {
         this.x = x;
         this.y = y;
         this.z = z;
 
         this.stagingBuffer = stagingBuffer;
-        this.renderList = new ChunkRenderList(this);
+        this.renderList = new ChunkRenderList(this, partition);
     }
 
     public static long key(int x, int y, int z) {
@@ -116,8 +114,6 @@ public class RenderRegion {
             this.resources = null;
         }
 
-        Arrays.fill(this.sections, null);
-
         for (var batch : this.cachedBatches.values()) {
             batch.delete();
         }
@@ -146,10 +142,6 @@ public class RenderRegion {
         batch = new MultiDrawBatch((ModelQuadFacing.COUNT * RenderRegion.REGION_SIZE) + 1);
         this.cachedBatches.put(pass, batch);
         return batch;
-    }
-
-    public boolean isEmpty() {
-        return this.sectionCount == 0;
     }
 
     public SectionRenderDataStorage getStorage(TerrainRenderPass pass) {
@@ -186,38 +178,19 @@ public class RenderRegion {
         this.sectionRenderData.get(DefaultTerrainRenderPasses.TRANSLUCENT).onIndexBufferResized();
     }
 
-    public void addSection(RenderSection section) {
-        var sectionIndex = section.getSectionIndex();
-        var prev = this.sections[sectionIndex];
-
-        if (prev != null) {
-            throw new IllegalStateException("Section has already been added to the region");
-        }
-
-        this.sections[sectionIndex] = section;
+    public void addSection() {
         this.sectionCount++;
     }
 
-    public void removeSection(RenderSection section) {
-        var sectionIndex = section.getSectionIndex();
-        var prev = this.sections[sectionIndex];
-
-        if (prev == null) {
-            throw new IllegalStateException("Section was not loaded within the region");
-        } else if (prev != section) {
-            throw new IllegalStateException("Tried to remove the wrong section");
-        }
-
+    public void removeSection(int regionSectionIndex) {
         for (var storage : this.sectionRenderData.values()) {
-            storage.removeData(sectionIndex);
+            storage.removeData(regionSectionIndex);
         }
-
-        this.sections[sectionIndex] = null;
         this.sectionCount--;
     }
 
-    public RenderSection getSection(int id) {
-        return this.sections[id];
+    public boolean isEmpty() {
+        return this.sectionCount == 0;
     }
 
     public DeviceResources getResources() {

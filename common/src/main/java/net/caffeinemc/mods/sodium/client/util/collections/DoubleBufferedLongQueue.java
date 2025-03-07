@@ -1,20 +1,15 @@
 package net.caffeinemc.mods.sodium.client.util.collections;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+public final class DoubleBufferedLongQueue {
+    private LongQueueImpl read, write;
 
-import java.util.Arrays;
-
-public final class DoubleBufferedQueue<E> {
-    private QueueImpl<E> read, write;
-
-    public DoubleBufferedQueue() {
-        this.read = new QueueImpl<>();
-        this.write = new QueueImpl<>();
+    public DoubleBufferedLongQueue() {
+        this.read = new LongQueueImpl();
+        this.write = new LongQueueImpl();
     }
 
     public boolean flip() {
-        if (this.write.size() == 0) {
+        if (this.write.isEmpty()) {
             return false;
         }
 
@@ -32,25 +27,24 @@ public final class DoubleBufferedQueue<E> {
         this.write.clear();
     }
 
-    public ReadQueue<E> read() {
+    public LongReadQueue read() {
         return this.read;
     }
 
-    public WriteQueue<E> write() {
+    public LongWriteQueue write() {
         return this.write;
     }
 
-    private static final class QueueImpl<E> implements ReadQueue<E>, WriteQueue<E> {
-        private E[] elements;
+    private static final class LongQueueImpl implements LongReadQueue, LongWriteQueue {
+        private long[] elements;
         private int readIndex, writeIndex;
 
-        QueueImpl() {
+        LongQueueImpl() {
             this(256);
         }
 
-        @SuppressWarnings("unchecked")
-        QueueImpl(int capacity) {
-            this.elements = (E[]) new Object[capacity];
+        LongQueueImpl(int capacity) {
+            this.elements = new long[capacity];
         }
 
         @Override
@@ -63,35 +57,28 @@ public final class DoubleBufferedQueue<E> {
         }
 
         @Override
-        public @Nullable E dequeue() {
-            if (this.readIndex == this.writeIndex) {
-                return null;
-            }
-
+        public long dequeue() {
             return this.elements[this.readIndex++];
         }
 
         @Override
-        public void enqueue(@NotNull E e) {
+        public boolean isEmpty() {
+            return this.readIndex == this.writeIndex;
+        }
+
+        @Override
+        public void enqueue(long element) {
             if (this.writeIndex >= this.elements.length) {
                 this.resize(this.writeIndex + 1);
             }
 
-            this.elements[this.writeIndex++] = e;
+            this.elements[this.writeIndex++] = element;
         }
 
 
         public void clear() {
-            if (this.writeIndex != 0) {
-                Arrays.fill(this.elements, 0, this.writeIndex, null);
-            }
-
             this.readIndex = 0;
             this.writeIndex = 0;
-        }
-
-        public int size() {
-            return this.writeIndex - this.readIndex;
         }
 
         private void grow(int minimumSize) {
@@ -99,8 +86,7 @@ public final class DoubleBufferedQueue<E> {
         }
 
         private void resize(int length) {
-            @SuppressWarnings("unchecked")
-            E[] elements = (E[]) new Object[length];
+            long[] elements = new long[length];
             System.arraycopy(this.elements, 0, elements, 0, this.writeIndex);
 
             this.elements = elements;

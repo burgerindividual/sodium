@@ -3,7 +3,7 @@ package net.caffeinemc.mods.sodium.client.render.chunk.lists;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkUpdateType;
-import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
 import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
@@ -19,7 +19,7 @@ import java.util.Queue;
  */
 public class VisibleChunkCollector implements OcclusionCuller.Visitor {
     private final ObjectArrayList<ChunkRenderList> sortedRenderLists;
-    private final EnumMap<ChunkUpdateType, ArrayDeque<RenderSection>> sortedRebuildLists;
+    private final EnumMap<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> sortedRebuildLists;
 
     private final int frame;
 
@@ -105,7 +105,7 @@ public class VisibleChunkCollector implements OcclusionCuller.Visitor {
         return new SortedRenderLists(sorted);
     }
 
-    public Map<ChunkUpdateType, ArrayDeque<RenderSection>> getRebuildLists() {
+    public Map<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> getRebuildLists() {
         return this.sortedRebuildLists;
     }
 }

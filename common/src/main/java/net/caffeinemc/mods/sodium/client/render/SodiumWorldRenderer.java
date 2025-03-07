@@ -16,6 +16,7 @@ import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.map.ChunkTracker;
 import net.caffeinemc.mods.sodium.client.render.chunk.map.ChunkTrackerHolder;
+import net.caffeinemc.mods.sodium.client.render.chunk.partition.PartitionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.trigger.CameraMovement;
 import net.caffeinemc.mods.sodium.client.render.viewport.Viewport;
@@ -313,39 +314,40 @@ public class SodiumWorldRenderer {
 
         BlockEntityRenderDispatcher blockEntityRenderer = Minecraft.getInstance().getBlockEntityRenderDispatcher();
 
-        this.renderBlockEntities(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, player, isGlowing);
+        this.renderCullableBlockEntities(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, player, isGlowing);
         this.renderGlobalBlockEntities(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, player, isGlowing);
     }
 
-    private void renderBlockEntities(PoseStack matrices,
-                                     RenderBuffers bufferBuilders,
-                                     Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
-                                     float tickDelta,
-                                     MultiBufferSource.BufferSource immediate,
-                                     double x,
-                                     double y,
-                                     double z,
-                                     BlockEntityRenderDispatcher blockEntityRenderer,
-                                     LocalPlayer player,
-                                     LocalBooleanRef isGlowing) {
+    private void renderCullableBlockEntities(PoseStack matrices,
+                                             RenderBuffers bufferBuilders,
+                                             Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
+                                             float tickDelta,
+                                             MultiBufferSource.BufferSource immediate,
+                                             double x,
+                                             double y,
+                                             double z,
+                                             BlockEntityRenderDispatcher blockEntityRenderer,
+                                             LocalPlayer player,
+                                             LocalBooleanRef isGlowing) {
         SortedRenderLists renderLists = this.renderSectionManager.getRenderLists();
         Iterator<ChunkRenderList> renderListIterator = renderLists.iterator();
 
         while (renderListIterator.hasNext()) {
             var renderList = renderListIterator.next();
 
-            var renderRegion = renderList.getRegion();
             var renderSectionIterator = renderList.sectionsWithEntitiesIterator();
-
             if (renderSectionIterator == null) {
                 continue;
             }
 
-            while (renderSectionIterator.hasNext()) {
-                var renderSectionId = renderSectionIterator.nextByteAsInt();
-                var renderSection = renderRegion.getSection(renderSectionId);
+            var partition = renderList.getPartition();
+            var partitionRegionOffset = renderList.getPartitionRegionOffset();
 
-                var blockEntities = renderSection.getCulledBlockEntities();
+            while (renderSectionIterator.hasNext()) {
+                var regionSectionIndex = renderSectionIterator.nextByteAsInt();
+                var partitionSectionIndex = PartitionSectionIndex.fromRegion(regionSectionIndex, partitionRegionOffset);
+
+                var blockEntities = partition.cullableBlockEntitiesArray[partitionSectionIndex];
 
                 if (blockEntities == null) {
                     continue;
@@ -369,14 +371,8 @@ public class SodiumWorldRenderer {
                                            BlockEntityRenderDispatcher blockEntityRenderer,
                                            LocalPlayer player,
                                            LocalBooleanRef isGlowing) {
-        for (var renderSection : this.renderSectionManager.getSectionsWithGlobalEntities()) {
-            var blockEntities = renderSection.getGlobalBlockEntities();
-
-            if (blockEntities == null) {
-                continue;
-            }
-
-            for (var blockEntity : blockEntities) {
+        for (var sectionBlockEntities : this.renderSectionManager.getGlobalBlockEntities()) {
+            for (var blockEntity : sectionBlockEntities) {
                 renderBlockEntity(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, blockEntity, player, isGlowing);
             }
         }
@@ -435,18 +431,19 @@ public class SodiumWorldRenderer {
         while (renderListIterator.hasNext()) {
             var renderList = renderListIterator.next();
 
-            var renderRegion = renderList.getRegion();
             var renderSectionIterator = renderList.sectionsWithEntitiesIterator();
-
             if (renderSectionIterator == null) {
                 continue;
             }
 
-            while (renderSectionIterator.hasNext()) {
-                var renderSectionId = renderSectionIterator.nextByteAsInt();
-                var renderSection = renderRegion.getSection(renderSectionId);
+            var partition = renderList.getPartition();
+            var partitionRegionOffset = renderList.getPartitionRegionOffset();
 
-                var blockEntities = renderSection.getCulledBlockEntities();
+            while (renderSectionIterator.hasNext()) {
+                var regionSectionIndex = renderSectionIterator.nextByteAsInt();
+                var partitionSectionIndex = PartitionSectionIndex.fromRegion(regionSectionIndex, partitionRegionOffset);
+
+                var blockEntities = partition.cullableBlockEntitiesArray[partitionSectionIndex];
 
                 if (blockEntities == null) {
                     continue;
@@ -458,14 +455,8 @@ public class SodiumWorldRenderer {
             }
         }
 
-        for (var renderSection : this.renderSectionManager.getSectionsWithGlobalEntities()) {
-            var blockEntities = renderSection.getGlobalBlockEntities();
-
-            if (blockEntities == null) {
-                continue;
-            }
-
-            for (BlockEntity blockEntity : blockEntities) {
+        for (var sectionBlockEntities : this.renderSectionManager.getGlobalBlockEntities()) {
+            for (BlockEntity blockEntity : sectionBlockEntities) {
                 blockEntityConsumer.accept(blockEntity);
             }
         }

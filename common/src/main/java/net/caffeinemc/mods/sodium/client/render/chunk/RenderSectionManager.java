@@ -127,7 +127,6 @@ public class RenderSectionManager {
         if (NativeCull.SUPPORTED) {
             nativeGraph = new NativeGraph(
                     this.regions,
-                    this.partitions,
                     this.taskLists,
                     (byte) renderDistance,
                     (byte) level.getMinSectionY(),
@@ -136,7 +135,7 @@ public class RenderSectionManager {
         }
         this.nativeGraph = nativeGraph;
 
-        this.sectionCache = new ClonedChunkSectionCache(this.level);
+        this.sectionCache = new ClonedChunkSectionCache(level);
     }
 
     public void updateCameraState(Vector3dc cameraPosition, Camera camera) {
@@ -211,6 +210,19 @@ public class RenderSectionManager {
     public void onSectionAdded(int x, int y, int z) {
         var partition = this.partitions.getOrCreateFromSection(x, y, z);
         var partitionSectionIndex = PartitionSectionIndex.pack(x, y, z);
+
+//        var rsi = RegionSectionIndex.fromPartition(partitionSectionIndex);
+//        if (rsi != RegionSectionIndex.pack(x, y, z)) {
+//            throw new RuntimeException("RSI Validation Failed");
+//        }
+//
+//        var psi2 = PartitionSectionIndex.fromRegion(
+//                rsi,
+//                PartitionSectionIndex.getRegionOffset(y >> RenderRegion.REGION_HEIGHT_SH)
+//        );
+//        if (psi2 != partitionSectionIndex) {
+//            throw new RuntimeException("PSI Validation Failed");
+//        }
 
         var sectionFlags = partition.flagsArray[partitionSectionIndex];
 
@@ -321,7 +333,7 @@ public class RenderSectionManager {
         //  Perhaps make a SectionIterator class that allows partitions to be iterated from a bounding box of sections.
 
         var partition = this.partitions.getFromSection(x, y, z);
-        if (partition == null || partition.lastVisibleFrame != this.lastUpdatedFrame) {
+        if (partition == null || partition.lastUpdatedFrame != this.lastUpdatedFrame) {
             return false;
         }
 

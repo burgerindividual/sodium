@@ -49,7 +49,7 @@ public class WorldPartition {
     //  some sort of key to identify a specific update submission.
     public final long pUpdateStateArray;
 
-    public int lastVisibleFrame = -1;
+    public int lastUpdatedFrame = -1;
     private int sectionCount;
 
     public WorldPartition() {

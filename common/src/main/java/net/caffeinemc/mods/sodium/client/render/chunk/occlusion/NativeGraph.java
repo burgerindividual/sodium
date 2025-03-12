@@ -8,7 +8,6 @@ import net.caffeinemc.mods.sodium.client.render.chunk.compile.UniqueSectionRef;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.partition.UpdateStateUnsafe;
-import net.caffeinemc.mods.sodium.client.render.chunk.partition.WorldPartitionManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RegionSectionIndex;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegionManager;
@@ -29,7 +28,6 @@ import java.util.Queue;
 public class NativeGraph implements Closeable {
     private final long nativePtr;
     private final RenderRegionManager regions;
-    private final WorldPartitionManager partitions;
 
     private final ObjectArrayList<ChunkRenderList> sortedRenderLists;
     private final EnumMap<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> sortedRebuildLists;
@@ -37,7 +35,6 @@ public class NativeGraph implements Closeable {
 
     public NativeGraph(
             RenderRegionManager regions,
-            WorldPartitionManager partitions,
             EnumMap<ChunkUpdateType, ArrayDeque<UniqueSectionRef>> sortedRebuildLists,
             byte renderDistance,
             byte minSectionY,
@@ -49,7 +46,6 @@ public class NativeGraph implements Closeable {
                 maxSectionY
         );
         this.regions = regions;
-        this.partitions = partitions;
 
         this.sortedRenderLists = new ObjectArrayList<>();
         this.sortedRebuildLists = sortedRebuildLists;
@@ -96,30 +92,16 @@ public class NativeGraph implements Closeable {
     }
 
     private void readTile(long tilePtr, int frame) {
-        var originRegionX = MemoryUtil.memGetInt(tilePtr);
-        var originRegionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
-        var originRegionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
+        var tileSectionX = MemoryUtil.memGetInt(tilePtr);
+        var tileSectionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
+        var tileSectionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
         var visibleSectionsPtr = MemoryUtil.memGetAddress(tilePtr + 16);
 
-        var partition = this.partitions.get(
-                originRegionX,
-                originRegionY >> 1,
-                originRegionZ
-        );
-        if (partition == null) {
-            return;
-        }
-        // If a tile is in the results queue, then we know that at least 1 section is visible in the tile. Because
-        // tiles and partitions represent the same data at the moment, and because there shouldn't ever be duplicate
-        // tile entries, we can go ahead and say that the partition is visible.
-        partition.lastVisibleFrame = frame;
-        partition.resetCullingState();
-        var partitionRawVisibleSections = partition.visibleSections.getWords();
-
+        // FIXME: THIS WILL NOT WORK IF THE WORLD MIN SECTION Y ISN'T ALIGNED TO THE HEIGHT OF A REGION
         for (int regionYInTile = 0; regionYInTile < 2; regionYInTile++) {
-            var regionX = originRegionX;
-            var regionY = originRegionY + regionYInTile;
-            var regionZ = originRegionZ;
+            var regionX = tileSectionX >> RenderRegion.REGION_WIDTH_SH;
+            var regionY = (tileSectionY >> RenderRegion.REGION_HEIGHT_SH) + regionYInTile;
+            var regionZ = tileSectionZ >> RenderRegion.REGION_LENGTH_SH;
             var region = this.regions.get(regionX, regionY, regionZ);
             if (region == null) {
                 continue;
@@ -130,9 +112,19 @@ public class NativeGraph implements Closeable {
             var regionSectionZ = regionZ << RenderRegion.REGION_LENGTH_SH;
             var renderList = region.getRenderList();
 
+            var partition = renderList.getPartition();
+            if (partition.lastUpdatedFrame != frame) {
+                partition.lastUpdatedFrame = frame;
+                partition.resetCullingState();
+            }
+            var partitionRawVisibleSections = partition.visibleSections.getWords();
+            var regionYInPartition = regionY & 1;
+
             for (int sectionYInRegion = 0; sectionYInRegion < 4; sectionYInRegion++) {
-                var sectionYInPartition = sectionYInRegion + (regionYInTile * RenderRegion.REGION_HEIGHT);
-                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInPartition * Long.BYTES));
+                var sectionYInTile = sectionYInRegion + (regionYInTile * RenderRegion.REGION_HEIGHT);
+                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInTile * Long.BYTES));
+
+                var sectionYInPartition = sectionYInRegion + (regionYInPartition * RenderRegion.REGION_HEIGHT);
                 partitionRawVisibleSections[sectionYInPartition] = bits;
 
                 while (bits != 0) {

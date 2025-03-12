@@ -16,14 +16,14 @@ public class RegionSectionIndex {
     }
 
     public static int unpackX(int idx) {
-        return (idx >> X_OFFSET) & X_BITS;
+        return (idx >>> X_OFFSET) & X_BITS;
     }
 
     public static int unpackY(int idx) {
-        return (idx >> Y_OFFSET) & Y_BITS;
+        return (idx >>> Y_OFFSET) & Y_BITS;
     }
 
     public static int unpackZ(int idx) {
-        return (idx >> Z_OFFSET) & Z_BITS;
+        return (idx >>> Z_OFFSET) & Z_BITS;
     }
 }

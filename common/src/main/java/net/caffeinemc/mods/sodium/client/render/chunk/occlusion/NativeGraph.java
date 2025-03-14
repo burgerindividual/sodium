@@ -118,6 +118,9 @@ public class NativeGraph implements Closeable {
                 partition.resetCullingState();
             }
             var partitionRawVisibleSections = partition.visibleSections.getWords();
+            var flagsArray = partition.flagsArray;
+            var pUpdateStateArray = partition.pUpdateStateArray;
+            var taskCancellationTokens = partition.taskCancellationTokens;
             var regionYInPartition = regionY & 1;
 
             for (int sectionYInRegion = 0; sectionYInRegion < 4; sectionYInRegion++) {
@@ -134,7 +137,7 @@ public class NativeGraph implements Closeable {
                     var regionSectionIndex = (sectionYInRegion * Long.SIZE) + bitIdx;
                     var partitionSectionIndex = (sectionYInPartition * Long.SIZE) + bitIdx;
 
-                    var sectionFlags = partition.flagsArray[partitionSectionIndex];
+                    var sectionFlags = flagsArray[partitionSectionIndex];
 
                     // only process section (and associated render list) if it has content that needs rendering
                     if (RenderSectionFlags.isBuilt(sectionFlags) && sectionFlags != RenderSectionFlags.EMPTY) {
@@ -148,10 +151,10 @@ public class NativeGraph implements Closeable {
                     }
 
                     // always add to rebuild lists though, because it might just not be built yet
-                    var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+                    var pUpdateState = UpdateStateUnsafe.indexArray(pUpdateStateArray, partitionSectionIndex);
                     ChunkUpdateType type = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
 
-                    if (type != null && partition.taskCancellationTokens[partitionSectionIndex] == null) {
+                    if (type != null && taskCancellationTokens[partitionSectionIndex] == null) {
                         Queue<UniqueSectionRef> queue = this.sortedRebuildLists.get(type);
 
                         if (queue.size() < type.getMaximumQueueSize()) {

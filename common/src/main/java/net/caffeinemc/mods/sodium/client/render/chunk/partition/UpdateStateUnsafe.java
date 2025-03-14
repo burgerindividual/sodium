@@ -41,7 +41,8 @@ public class UpdateStateUnsafe {
     public static @Nullable ChunkUpdateType getPendingUpdate(long pUpdateState) {
         var ordinal = MemoryUtil.memGetInt(pUpdateState + CHUNK_UPDATE_TYPE_OFFSET);
 
-        if (ordinal < ChunkUpdateType.VALUE_COUNT && ordinal >= 0) {
+        // Hotspot only consistently skips the array bounds check if we do this
+        if (Integer.compareUnsigned(ordinal, ChunkUpdateType.VALUES.length) < 0) {
             return ChunkUpdateType.VALUES[ordinal];
         } else {
             return null;

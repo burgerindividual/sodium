@@ -26,6 +26,10 @@ import java.util.EnumMap;
 import java.util.Queue;
 
 public class NativeGraph implements Closeable {
+    private static final int TILE_WIDTH = 8;
+    private static final int TILE_HEIGHT = 8;
+    private static final int TILE_LENGTH = 8;
+
     private final long nativePtr;
     private final RenderRegionManager regions;
 
@@ -97,21 +101,33 @@ public class NativeGraph implements Closeable {
         var tileSectionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
         var visibleSectionsPtr = MemoryUtil.memGetAddress(tilePtr + 16);
 
-        // FIXME: THIS WILL NOT WORK IF THE WORLD MIN SECTION Y ISN'T ALIGNED TO THE HEIGHT OF A REGION
-        for (int regionYInTile = 0; regionYInTile < 2; regionYInTile++) {
-            var regionX = tileSectionX >> RenderRegion.REGION_WIDTH_SH;
-            var regionY = (tileSectionY >> RenderRegion.REGION_HEIGHT_SH) + regionYInTile;
-            var regionZ = tileSectionZ >> RenderRegion.REGION_LENGTH_SH;
+        short currentY = (short) tileSectionY;
+        short endY = (short) (tileSectionY + TILE_HEIGHT);
+        byte processedYInTile = 0;
+
+        while (currentY < endY) {
+            short nextY = (short) Math.min((currentY + RenderRegion.REGION_HEIGHT) & ~RenderRegion.REGION_HEIGHT_M, endY);
+
+            byte regionY = (byte) (currentY >> RenderRegion.REGION_HEIGHT_SH);
+            byte minSectionYInRegion = (byte) (currentY & RenderRegion.REGION_HEIGHT_M);
+            byte splitLength = (byte) (nextY - currentY);
+            byte maxSectionYInRegion = (byte) (minSectionYInRegion + splitLength);
+
+            currentY = nextY;
+
+            int regionX = tileSectionX >> RenderRegion.REGION_WIDTH_SH;
+            int regionZ = tileSectionZ >> RenderRegion.REGION_LENGTH_SH;
             var region = this.regions.get(regionX, regionY, regionZ);
             if (region == null) {
-                continue;
+                return;
             }
 
-            var regionSectionX = regionX << RenderRegion.REGION_WIDTH_SH;
-            var regionSectionY = regionY << RenderRegion.REGION_HEIGHT_SH;
-            var regionSectionZ = regionZ << RenderRegion.REGION_LENGTH_SH;
+            int regionSectionX = regionX << RenderRegion.REGION_WIDTH_SH;
+            int regionSectionY = regionY << RenderRegion.REGION_HEIGHT_SH;
+            int regionSectionZ = regionZ << RenderRegion.REGION_LENGTH_SH;
             var renderList = region.getRenderList();
 
+//            var partition = region.getRenderList().getPartition();
             var partition = renderList.getPartition();
             if (partition.lastUpdatedFrame != frame) {
                 partition.lastUpdatedFrame = frame;
@@ -121,21 +137,30 @@ public class NativeGraph implements Closeable {
             var flagsArray = partition.flagsArray;
             var pUpdateStateArray = partition.pUpdateStateArray;
             var taskCancellationTokens = partition.taskCancellationTokens;
-            var regionYInPartition = regionY & 1;
+            byte regionYInPartition = (byte) (regionY & 1);
 
-            for (int sectionYInRegion = 0; sectionYInRegion < 4; sectionYInRegion++) {
-                var sectionYInTile = sectionYInRegion + (regionYInTile * RenderRegion.REGION_HEIGHT);
-                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInTile * Long.BYTES));
+            byte sectionYInTile = processedYInTile;
+            for (byte sectionYInRegion = minSectionYInRegion; sectionYInRegion < maxSectionYInRegion; sectionYInRegion++) {
+                long bits = MemoryUtil.memGetLong(visibleSectionsPtr + ((long) sectionYInTile * Long.BYTES));
 
-                var sectionYInPartition = sectionYInRegion + (regionYInPartition * RenderRegion.REGION_HEIGHT);
+                byte sectionYInPartition = (byte) (sectionYInRegion + (regionYInPartition * RenderRegion.REGION_HEIGHT));
                 partitionRawVisibleSections[sectionYInPartition] = bits;
 
+//                this.readBits(
+//                        bits,
+//                        partition,
+//                        sectionYInPartition,
+//                        region,
+//                        sectionYInRegion,
+//                        frame
+//                );
                 while (bits != 0) {
-                    var bitIdx = Long.numberOfTrailingZeros(bits);
+                    byte bitIdx = (byte) Long.numberOfTrailingZeros(bits);
                     bits &= bits - 1;
 
-                    var regionSectionIndex = (sectionYInRegion * Long.SIZE) + bitIdx;
-                    var partitionSectionIndex = (sectionYInPartition * Long.SIZE) + bitIdx;
+                    // this can fit in an unsigned byte, but it's easier to keep it in a short
+                    short regionSectionIndex = (short) ((sectionYInRegion * Long.SIZE) + bitIdx);
+                    short partitionSectionIndex = (short) ((sectionYInPartition * Long.SIZE) + bitIdx);
 
                     var sectionFlags = flagsArray[partitionSectionIndex];
 
@@ -176,9 +201,110 @@ public class NativeGraph implements Closeable {
                         }
                     }
                 }
+
+                sectionYInTile++;
             }
+
+            processedYInTile += splitLength;
+//            currentY = nextY;
         }
     }
+
+//    private void readBits(
+//            long bits,
+//            WorldPartition partition,
+//            int sectionYInPartition,
+//            RenderRegion region,
+//            int sectionYInRegion,
+//            int frame
+//    ) {
+//        var renderList = region.getRenderList();
+//
+//        while (bits != 0) {
+//            byte bitIdx = (byte) Long.numberOfTrailingZeros(bits);
+//            bits &= bits - 1;
+//
+//            // this can fit in an unsigned byte, but it's easier to keep it in a short
+//            short regionSectionIndex = (short) ((sectionYInRegion * Long.SIZE) + bitIdx);
+//            short partitionSectionIndex = (short) ((sectionYInPartition * Long.SIZE) + bitIdx);
+//
+//            var sectionFlags = partition.flagsArray[partitionSectionIndex];
+//
+//            // only process section (and associated render list) if it has content that needs rendering
+//            if (RenderSectionFlags.isBuilt(sectionFlags) && sectionFlags != RenderSectionFlags.EMPTY) {
+//                if (renderList.getLastVisibleFrame() != frame) {
+//                    renderList.reset(frame);
+//
+//                    this.sortedRenderLists.add(renderList);
+//                }
+//
+//                renderList.add(regionSectionIndex, sectionFlags);
+//            }
+//
+//            // always add to rebuild lists though, because it might just not be built yet
+//            var pUpdateState = UpdateStateUnsafe.indexArray(partition.pUpdateStateArray, partitionSectionIndex);
+//            ChunkUpdateType type = UpdateStateUnsafe.getPendingUpdate(pUpdateState);
+//
+//            if (type != null && partition.taskCancellationTokens[partitionSectionIndex] == null) {
+//                this.tryAddToRebuildList(
+//                        type,
+//                        pUpdateState,
+//                        partition,
+//                        partitionSectionIndex,
+//                        region,
+//                        regionSectionIndex
+//                );
+////                Queue<UniqueSectionRef> queue = this.sortedRebuildLists.get(type);
+////
+////                if (queue.size() < type.getMaximumQueueSize()) {
+////                    var sectionPos = SectionPos.asLong(
+////                            region.getChunkX() + RegionSectionIndex.unpackX(regionSectionIndex),
+////                            region.getChunkY() + RegionSectionIndex.unpackY(regionSectionIndex),
+////                            region.getChunkZ() + RegionSectionIndex.unpackZ(regionSectionIndex)
+////                    );
+////                    var sectionUid = UpdateStateUnsafe.getSectionUid(pUpdateState);
+////
+////                    queue.add(new UniqueSectionRef(
+////                            sectionPos,
+////                            sectionUid,
+////                            partition,
+////                            partitionSectionIndex,
+////                            region,
+////                            regionSectionIndex
+////                    ));
+////                }
+//            }
+//        }
+//    }
+
+//    private void tryAddToRebuildList(
+//            ChunkUpdateType type,
+//            long pUpdateState,
+//            WorldPartition partition,
+//            short partitionSectionIndex,
+//            RenderRegion region,
+//            short regionSectionIndex
+//    ) {
+//        Queue<UniqueSectionRef> queue = this.sortedRebuildLists.get(type);
+//
+//        if (queue.size() < type.getMaximumQueueSize()) {
+//            var sectionPos = SectionPos.asLong(
+//                    region.getChunkX() + RegionSectionIndex.unpackX(regionSectionIndex),
+//                    region.getChunkY() + RegionSectionIndex.unpackY(regionSectionIndex),
+//                    region.getChunkZ() + RegionSectionIndex.unpackZ(regionSectionIndex)
+//            );
+//            var sectionUid = UpdateStateUnsafe.getSectionUid(pUpdateState);
+//
+//            queue.add(new UniqueSectionRef(
+//                    sectionPos,
+//                    sectionUid,
+//                    partition,
+//                    partitionSectionIndex,
+//                    region,
+//                    regionSectionIndex
+//            ));
+//        }
+//    }
 
     public SortedRenderLists createRenderLists(Viewport viewport) {
         // sort the regions by distance to fix rare region ordering bugs

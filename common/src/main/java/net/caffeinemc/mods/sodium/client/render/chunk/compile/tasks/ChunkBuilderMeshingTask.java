@@ -100,7 +100,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         BlockPos.MutableBlockPos modelOffset = new BlockPos.MutableBlockPos();
 
         TranslucentGeometryCollector collector;
-        if (SodiumClientMod.options().performance.getSortBehavior() != SortBehavior.OFF) {
+        if (SodiumClientMod.options().debug.getSortBehavior() != SortBehavior.OFF) {
             collector = new TranslucentGeometryCollector(SectionPos.of(sectionPos));
         } else {
             collector = null;

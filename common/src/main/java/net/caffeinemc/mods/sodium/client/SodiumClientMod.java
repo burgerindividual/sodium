@@ -1,8 +1,11 @@
 package net.caffeinemc.mods.sodium.client;
 
+import net.caffeinemc.mods.sodium.client.console.Console;
+import net.caffeinemc.mods.sodium.client.console.message.MessageLevel;
 import net.caffeinemc.mods.sodium.client.data.fingerprint.FingerprintMeasure;
 import net.caffeinemc.mods.sodium.client.data.fingerprint.HashedFingerprint;
 import net.caffeinemc.mods.sodium.client.gui.SodiumGameOptions;
+import net.caffeinemc.mods.sodium.client.services.PlatformRuntimeInformation;
 import net.caffeinemc.mods.sodium.client.console.Console;
 import net.caffeinemc.mods.sodium.client.console.message.MessageLevel;
 import net.caffeinemc.mods.sodium.ffi.NativeCull;
@@ -108,6 +111,10 @@ public class SodiumClientMod {
                 LOGGER.error("Failed to update config file", e);
             }
         }
+    }
+
+    public static boolean allowDebuggingOptions() {
+        return PlatformRuntimeInformation.getInstance().isDevelopmentEnvironment();
     }
 
     private static void loadNatives() {

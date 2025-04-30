@@ -90,7 +90,7 @@ public class NativeGraph implements Closeable {
             var tileCount = MemoryUtil.memGetAddress(resultsPtr + Pointer.POINTER_SIZE);
 
             for (var tileIdx = 0L; tileIdx < tileCount; tileIdx++) {
-                this.readTile(tilesSlicePtr + (tileIdx * 24), frame);
+                this.readTile(tilesSlicePtr + (tileIdx * 80), frame);
             }
         }
     }
@@ -99,7 +99,7 @@ public class NativeGraph implements Closeable {
         var tileSectionX = MemoryUtil.memGetInt(tilePtr);
         var tileSectionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
         var tileSectionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
-        var visibleSectionsPtr = MemoryUtil.memGetAddress(tilePtr + 16);
+        var visibleSectionsPtr = tilePtr + 16;
 
         short currentY = (short) tileSectionY;
         short endY = (short) (tileSectionY + TILE_HEIGHT);

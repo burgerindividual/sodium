@@ -38,7 +38,6 @@ public class NativeCull {
                     nativePath
             );
 
-            initAllocator();
             panicCallback = initPanicHandler();
         } catch (Throwable t) {
             SodiumClientMod.logger().error("Error loading native culling library", t);
@@ -74,33 +73,6 @@ public class NativeCull {
         }
 
         return "";
-    }
-
-    private static void initAllocator() {
-        var allocator = MemoryUtil.getAllocator();
-
-        var alignedAllocFnPtr = allocator.getAlignedAlloc();
-        var alignedFreeFnPtr = allocator.getAlignedFree();
-        var reallocFnPtr = allocator.getRealloc();
-        var callocFnPtr = allocator.getCalloc();
-
-        if (alignedAllocFnPtr == 0 || alignedFreeFnPtr == 0 || reallocFnPtr == 0 || callocFnPtr == 0) {
-            throw new NullPointerException(String.format(
-                    "Function pointers may not be null."
-                            + " aligned_alloc: %s, aligned_free: %s, realloc: %s, calloc: %s",
-                    alignedAllocFnPtr,
-                    alignedFreeFnPtr,
-                    reallocFnPtr,
-                    callocFnPtr
-            ));
-        }
-
-        NativeCull.setAllocator(
-                alignedAllocFnPtr,
-                alignedFreeFnPtr,
-                reallocFnPtr,
-                callocFnPtr
-        );
     }
 
     private static PanicCallback initPanicHandler() {
@@ -164,14 +136,6 @@ public class NativeCull {
 
         return pFrustum;
     }
-
-    /**
-     * @param aligned_alloc_fn_ptr Rust Type: {@code AlignedAllocFn}
-     * @param aligned_free_fn_ptr  Rust Type: {@code AlignedFreeFn}
-     * @param realloc_fn_ptr       Rust Type: {@code ReallocFn}
-     * @param calloc_fn_ptr        Rust Type: {@code CallocFn}
-     */
-    private static native void setAllocator(long aligned_alloc_fn_ptr, long aligned_free_fn_ptr, long realloc_fn_ptr, long calloc_fn_ptr);
 
     /**
      * @param panic_handler_fn_ptr Rust Type: {@code PanicHandlerFn}

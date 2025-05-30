@@ -92,7 +92,6 @@ public class NativeCull {
         long pFrustum = stack.nmalloc(8, 120);
 
         try {
-            // should be faster than normal reflection
             var planes = frustum.getPlanes();
 
             // the order of the planes in memory matches the direction order used in the native code

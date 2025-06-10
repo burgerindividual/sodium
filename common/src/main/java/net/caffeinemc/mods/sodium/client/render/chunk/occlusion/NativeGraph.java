@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkUpdateType;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.caffeinemc.mods.sodium.client.render.chunk.SectionIteration;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderList;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.SortedRenderLists;
 import net.caffeinemc.mods.sodium.client.render.chunk.region.RenderRegion;
@@ -23,6 +24,10 @@ import java.util.Map;
 import java.util.Queue;
 
 public class NativeGraph implements Closeable {
+    private static final int TILE_WIDTH = 8;
+    private static final int TILE_HEIGHT = 8;
+    private static final int TILE_LENGTH = 8;
+
     private final long nativePtr;
     private final RenderRegionManager regions;
 
@@ -85,44 +90,50 @@ public class NativeGraph implements Closeable {
             var tileCount = MemoryUtil.memGetAddress(resultsPtr + Pointer.POINTER_SIZE);
 
             for (var tileIdx = 0L; tileIdx < tileCount; tileIdx++) {
-                this.readTile(tilesSlicePtr + (tileIdx * 24), frame);
+                this.readTile(tilesSlicePtr + (tileIdx * 80), frame);
             }
         }
     }
 
     private void readTile(long tilePtr, int frame) {
-        var originRegionX = MemoryUtil.memGetInt(tilePtr);
-        var originRegionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
-        var originRegionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
-        var visibleSectionsPtr = MemoryUtil.memGetAddress(tilePtr + 16);
+        var tileSectionX = MemoryUtil.memGetInt(tilePtr);
+        var tileSectionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
+        var tileSectionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
+        var visibleSectionsPtr = tilePtr + 16;
 
-        for (int regionYOffset = 0; regionYOffset < 2; regionYOffset++) {
-            var region = this.regions.get(
-                    originRegionX,
-                    originRegionY + regionYOffset,
-                    originRegionZ
-            );
-            if (region == null) {
-                continue;
-            }
-            var renderList = region.getRenderList();
-            var regionByteOffset = regionYOffset * (RenderRegion.REGION_SIZE / Byte.SIZE);
+        int regionX = tileSectionX >> RenderRegion.REGION_WIDTH_SH;
+        int regionZ = tileSectionZ >> RenderRegion.REGION_LENGTH_SH;
 
-            for (int y = 0; y < 4; y++) {
-                var bits = MemoryUtil.memGetLong(visibleSectionsPtr + regionByteOffset + (y * Long.BYTES));
+        SectionIteration.iterateSplitsOnAxis(
+                tileSectionY,
+                tileSectionY + TILE_HEIGHT,
+                RenderRegion.REGION_HEIGHT,
+                (regionY, minSectionYInRegion, maxSectionYInRegion, nextYInTile) -> {
+                    var region = this.regions.get(regionX, regionY, regionZ);
+                    if (region == null) {
+                        return;
+                    }
 
-                while (bits != 0) {
-                    var bitIdx = Long.numberOfTrailingZeros(bits);
-                    bits &= bits - 1;
+                    var renderList = region.getRenderList();
 
-                    var sectionIndex = (y * Long.SIZE) + bitIdx;
-                    RenderSection section = region.getSection(sectionIndex);
-                    if (section != null) {
-                        this.visitSection(section, renderList, frame);
+                    long sectionYInTile = nextYInTile;
+                    for (int sectionYInRegion = minSectionYInRegion; sectionYInRegion < maxSectionYInRegion; sectionYInRegion++) {
+                        long bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInTile * Long.BYTES));
+                        sectionYInTile++;
+
+                        while (bits != 0) {
+                            var bitIdx = Long.numberOfTrailingZeros(bits);
+                            bits &= bits - 1;
+
+                            var sectionIndex = (sectionYInRegion * Long.SIZE) + bitIdx;
+                            RenderSection section = region.getSection(sectionIndex);
+                            if (section != null) {
+                                this.visitSection(section, renderList, frame);
+                            }
+                        }
                     }
                 }
-            }
-        }
+        );
     }
 
     private void visitSection(RenderSection section, ChunkRenderList renderList, int frame) {
@@ -163,8 +174,8 @@ public class NativeGraph implements Closeable {
         var cameraZ = sectionPos.getZ() >> RenderRegion.REGION_LENGTH_SH;
         var size = this.sortedRenderLists.size();
 
-        if (this.sortItems.length < size) {
-            this.sortItems = new int[size];
+        if (sortItems.length < size) {
+            sortItems = new int[size];
         }
 
         for (var i = 0; i < size; i++) {
@@ -172,20 +183,21 @@ public class NativeGraph implements Closeable {
             var x = Math.abs(region.getX() - cameraX);
             var y = Math.abs(region.getY() - cameraY);
             var z = Math.abs(region.getZ() - cameraZ);
-            this.sortItems[i] = (x + y + z) << 16 | i;
+            sortItems[i] = (x + y + z) << 16 | i;
         }
 
-        IntArrays.unstableSort(this.sortItems, 0, size);
+        IntArrays.unstableSort(sortItems, 0, size);
 
         var sorted = new ObjectArrayList<ChunkRenderList>(size);
         for (var i = 0; i < size; i++) {
-            var key = this.sortItems[i];
+            var key = sortItems[i];
             var renderList = this.sortedRenderLists.get(key & 0xFFFF);
             sorted.add(renderList);
         }
 
+        // sort sections and invalidate batch caches if the render lists changed
         for (var list : sorted) {
-            list.sortSections(sectionPos, this.sortItems);
+            list.prepareForRender(sectionPos, sortItems);
         }
 
         return new SortedRenderLists(sorted);

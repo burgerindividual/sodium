@@ -55,7 +55,6 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import org.apache.commons.lang3.ArrayUtils;
@@ -160,13 +159,10 @@ public class RenderSectionManager {
         final var searchDistance = this.getSearchDistance(fogParameters);
         final var useOcclusionCulling = this.shouldUseOcclusionCulling(camera, spectator);
 
-//        var player = Minecraft.getInstance().player;
         if (NativeCull.SUPPORTED
                 && this.nativeGraph != null
-                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum
-//                && player != null
-//                && player.isHolding(Items.DEBUG_STICK)
-                && (frame & 1) != 0) {
+//                && (frame & 1) != 0)
+                && viewport.getFrustum() instanceof NativeFrustum nativeFrustum) {
             this.nativeGraph.findVisible(nativeFrustum, viewport.getTransform(), searchDistance, useOcclusionCulling, frame);
             this.renderLists = this.nativeGraph.createRenderLists(viewport);
             this.taskLists = this.nativeGraph.getRebuildLists();
@@ -568,8 +564,7 @@ public class RenderSectionManager {
     }
 
     public boolean needsUpdate() {
-        var player = Minecraft.getInstance().player;
-        return !(player != null && player.isHolding(Items.DIAMOND_HOE));
+        return true;
     }
 
     public ChunkBuilder getBuilder() {

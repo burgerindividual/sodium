@@ -2,6 +2,7 @@ package net.caffeinemc.mods.sodium.ffi;
 
 import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.render.viewport.CameraTransform;
+import net.caffeinemc.mods.sodium.client.util.MathUtil;
 import org.lwjgl.system.*;
 import oshi.SystemInfo;
 
@@ -9,6 +10,21 @@ import static org.joml.FrustumIntersection.*;
 
 public class NativeCull {
     public static final boolean SUPPORTED;
+
+    // Size and alignment information obtained by hovering over Rust types with Rust Analyzer.
+    public static final int FFITILE_SIZE = 80;
+    public static final int FFITILE_ORIGIN_SECTION_X_OFFSET = 0;
+    public static final int FFITILE_ORIGIN_SECTION_Y_OFFSET = 4;
+    public static final int FFITILE_ORIGIN_SECTION_Z_OFFSET = 8;
+    public static final int FFITILE_VISIBLE_SECTIONS_OFFSET = MathUtil.align(12, Pointer.POINTER_SIZE);
+
+    public static final int FFISLICE_ALIGNMENT = Pointer.POINTER_SIZE;
+    public static final int FFISLICE_SIZE = Pointer.POINTER_SIZE * 2;
+    public static final int FFISLICE_DATA_PTR_OFFSET = 0;
+    public static final int FFISLICE_COUNT_OFFSET = Pointer.POINTER_SIZE;
+
+    public static final int FFICAMERA_SIZE = 120;
+    public static final int FFICAMERA_ALIGNMENT = Pointer.POINTER_SIZE;
 
     private static final PanicCallback PANIC_CALLBACK;
 
@@ -53,7 +69,7 @@ public class NativeCull {
             var cpuFeatureStrings = new SystemInfo().getHardware().getProcessor().getFeatureFlags();
 
             // Windows does not let us check for the presence of FMA in its API, so we'll just assume it's present if
-            // AVX2 is present. I don't know of any CPUs where this isn't the case
+            // AVX2 is present. Are there any CPUs where this isn't the case?
             var hasAVX2 = false;
             var hasSSE41 = false;
             var hasSSSE3 = false;
@@ -88,8 +104,7 @@ public class NativeCull {
     }
 
     public static long frustumCreate(MemoryStack stack, NativeFrustum frustum, CameraTransform transform) {
-        // alignment and size obtained from rust
-        long pFrustum = stack.nmalloc(8, 120);
+        long pFrustum = stack.nmalloc(FFICAMERA_ALIGNMENT, FFICAMERA_SIZE);
 
         try {
             var planes = frustum.getPlanes();
@@ -145,7 +160,8 @@ public class NativeCull {
      * @param render_distance        Rust Type: {@code u8}
      * @param world_bottom_section_y Rust Type: {@code i8}
      * @param world_top_section_y    Rust Type: {@code i8}
-     * @return Rust Type: {@code }
+     * @return a native pointer to a Graph instance allocated with the system allocator.
+     *                               Rust Type: {@code *mut Graph}
      */
     public static native long graphCreate(byte render_distance, byte world_bottom_section_y, byte world_top_section_y);
 

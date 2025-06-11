@@ -15,7 +15,6 @@ import net.caffeinemc.mods.sodium.ffi.NativeCull;
 import net.caffeinemc.mods.sodium.ffi.NativeFrustum;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.system.Pointer;
 
 import java.io.Closeable;
 import java.util.ArrayDeque;
@@ -71,7 +70,7 @@ public class NativeGraph implements Closeable {
         this.clear();
 
         try (var stack = MemoryStack.stackPush()) {
-            var resultsPtr = stack.ncalloc(8, 1, 16);
+            var resultsPtr = stack.ncalloc(NativeCull.FFISLICE_ALIGNMENT, 1, NativeCull.FFISLICE_SIZE);
             var cameraPtr = NativeCull.frustumCreate(
                     stack,
                     frustum,
@@ -86,24 +85,26 @@ public class NativeGraph implements Closeable {
                     useOcclusionCulling
             );
 
-            var tilesSlicePtr = MemoryUtil.memGetAddress(resultsPtr);
-            var tileCount = MemoryUtil.memGetAddress(resultsPtr + Pointer.POINTER_SIZE);
+            var tilesDataPtr = MemoryUtil.memGetAddress(resultsPtr + NativeCull.FFISLICE_DATA_PTR_OFFSET);
+            var tileCount = MemoryUtil.memGetAddress(resultsPtr + NativeCull.FFISLICE_COUNT_OFFSET);
 
             for (var tileIdx = 0L; tileIdx < tileCount; tileIdx++) {
-                this.readTile(tilesSlicePtr + (tileIdx * 80), frame);
+                this.readTile(tilesDataPtr + (tileIdx * NativeCull.FFITILE_SIZE), frame);
             }
         }
     }
 
     private void readTile(long tilePtr, int frame) {
-        var tileSectionX = MemoryUtil.memGetInt(tilePtr);
-        var tileSectionY = MemoryUtil.memGetInt(tilePtr + Integer.BYTES);
-        var tileSectionZ = MemoryUtil.memGetInt(tilePtr + (Integer.BYTES * 2));
-        var visibleSectionsPtr = tilePtr + 16;
+        var tileSectionX = MemoryUtil.memGetInt(tilePtr + NativeCull.FFITILE_ORIGIN_SECTION_X_OFFSET);
+        var tileSectionY = MemoryUtil.memGetInt(tilePtr + NativeCull.FFITILE_ORIGIN_SECTION_Y_OFFSET);
+        var tileSectionZ = MemoryUtil.memGetInt(tilePtr + NativeCull.FFITILE_ORIGIN_SECTION_Z_OFFSET);
+        var visibleSectionsPtr = tilePtr + NativeCull.FFITILE_VISIBLE_SECTIONS_OFFSET;
 
+        // We assume that tile X and Z coordinates line up with region X and Z coordinates.
         int regionX = tileSectionX >> RenderRegion.REGION_WIDTH_SH;
         int regionZ = tileSectionZ >> RenderRegion.REGION_LENGTH_SH;
 
+        // Iterate regions on Y axis inside current tile. Regions and Tiles aren't guaranteed to align on the Y axis.
         SectionIteration.iterateSplitsOnAxis(
                 tileSectionY,
                 tileSectionY + TILE_HEIGHT,
@@ -116,15 +117,26 @@ public class NativeGraph implements Closeable {
 
                     var renderList = region.getRenderList();
 
+                    // Iterate over section Y levels in the region, while also keeping track of the Y level in the tile
+                    // to fetch the visible section data.
                     long sectionYInTile = nextYInTile;
                     for (int sectionYInRegion = minSectionYInRegion; sectionYInRegion < maxSectionYInRegion; sectionYInRegion++) {
-                        long bits = MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInTile * Long.BYTES));
+                        // Get 64 bits of visible sections at a time, which represents a full slice on the X and Z axes.
+                        long visibleSectionsSlice =
+                                MemoryUtil.memGetLong(visibleSectionsPtr + (sectionYInTile * Long.BYTES));
                         sectionYInTile++;
 
-                        while (bits != 0) {
-                            var bitIdx = Long.numberOfTrailingZeros(bits);
-                            bits &= bits - 1;
+                        // Each 1-bit represents a section that is visible. Use Lemire-style set-bit iteration approach,
+                        // found here: https://lemire.me/blog/2018/02/21/iterating-over-set-bits-quickly/. This will
+                        // quickly skip over 0-bits.
+                        while (visibleSectionsSlice != 0) {
+                            var bitIdx = Long.numberOfTrailingZeros(visibleSectionsSlice);
+                            visibleSectionsSlice &= visibleSectionsSlice - 1;
 
+                            // Bit indices are ordered as YZX in both Tiles and Regions. The ZX part of the index has an
+                            // identical representation between Tile and Region indices, and the index of a bit in the
+                            // 64-bit slice conveniently represents that exactly. We only need to adjust for the Y part
+                            // of the index.
                             var sectionIndex = (sectionYInRegion * Long.SIZE) + bitIdx;
                             RenderSection section = region.getSection(sectionIndex);
                             if (section != null) {
